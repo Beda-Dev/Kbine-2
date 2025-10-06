@@ -34,6 +34,9 @@ const rateLimiter = require('./middlewares/rateLimiter'); // Limitation des requ
 const authRoutes = require('./routes/authRoutes'); // Authentification
 const userRoutes = require('./routes/usersRoutes');
 const operatorRoutes = require('./routes/operatorRoutes');
+const orderRoutes = require('./routes/orderRoutes');
+const paymentRoutes = require('./routes/paymentRoutes');
+
 
 // TODO pour le developpeur junior: Creer les autres fichiers de routes
 // - userRoutes.js - Gestion des utilisateurs (profil, administration)
@@ -123,9 +126,8 @@ app.use('/api/auth', authRoutes); // /api/auth/* - Authentification
 // TODO: Ajouter les autres routes une fois implementees
 app.use('/api/users', userRoutes); // /api/users/* - Gestion utilisateurs
 app.use('/api/operators', operatorRoutes); // /api/operators/* - Operateurs telecom
-// app.use('/api/plans', planRoutes); // /api/plans/* - Forfaits et plans
-// app.use('/api/orders', orderRoutes); // /api/orders/* - Commandes
-// app.use('/api/payments', paymentRoutes); // /api/payments/* - Paiements
+app.use('/api/orders', orderRoutes); // /api/orders/* - Commandes
+app.use('/api/payments', paymentRoutes); // /api/payments/* - Paiements
 
 // ===============================
 // ROUTES UTILITAIRES
