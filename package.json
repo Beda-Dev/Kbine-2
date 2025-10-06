@@ -1,0 +1,59 @@
+{
+  "name": "kbine-backend",
+  "version": "1.0.0",
+  "description": "Backend API pour l'application Kbine - Achat de credits et forfaits telephoniques",
+  "main": "src/app.js",
+  "scripts": {
+    "start": "node src/app.js",
+    "dev": "nodemon src/app.js",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "migrate": "node scripts/migrate.js",
+    "seed": "node scripts/seed.js"
+  },
+  "keywords": [
+    "kbine",
+    "telecom",
+    "credits",
+    "forfaits",
+    "nodejs",
+    "express",
+    "api"
+  ],
+  "author": "Kbine Team",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.19.2",
+    "cors": "^2.8.5",
+    "helmet": "^7.1.0",
+    "mysql2": "^3.11.3",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "joi": "^17.13.3",
+    "winston": "^3.14.2",
+    "dotenv": "^16.4.5",
+    "compression": "^1.7.4",
+    "rate-limiter-flexible": "^5.0.3",
+    "socket.io": "^4.8.0",
+    "node-cron": "^3.0.3",
+    "axios": "^1.7.7"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.7",
+    "jest": "^29.7.0",
+    "supertest": "^7.0.0",
+    "eslint": "^9.12.0",
+    "@eslint/js": "^9.12.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  }
+}
