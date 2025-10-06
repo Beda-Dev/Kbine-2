@@ -1,95 +1,213 @@
-const { body, param, query } = require('express-validator');
+const Joi = require('joi');
 
-// Options de validation communes
-const commonValidations = [
-    body('operator_id')
-        .notEmpty().withMessage('L\'ID de l\'opérateur est requis')
-        .isInt({ min: 1 }).withMessage('ID d\'opérateur invalide'),
-    
-    body('name')
-        .notEmpty().withMessage('Le nom du plan est requis')
-        .isLength({ max: 100 }).withMessage('Le nom ne doit pas dépasser 100 caractères'),
-    
-    body('description')
-        .optional()
-        .isLength({ max: 500 }).withMessage('La description ne doit pas dépasser 500 caractères'),
-    
-    body('price')
-        .notEmpty().withMessage('Le prix est requis')
-        .isFloat({ min: 0 }).withMessage('Le prix doit être un nombre positif'),
-    
-    body('type')
-        .notEmpty().withMessage('Le type de plan est requis')
-        .isIn(['credit', 'minutes', 'internet']).withMessage('Type de plan invalide'),
-    
-    body('validity_days')
-        .optional()
-        .isInt({ min: 1 }).withMessage('La validité doit être un nombre de jours positif'),
-    
-    body('ussd_code')
-        .notEmpty().withMessage('Le code USSD est requis')
-        .isString().withMessage('Le code USSD doit être une chaîne de caractères'),
-    
-    body('active')
-        .optional()
-        .isBoolean().withMessage('Le statut actif doit être un booléen')
-];
+// Schéma de base pour un plan
+const planSchema = Joi.object({
+    operator_id: Joi.number()
+        .integer()
+        .positive()
+        .required()
+        .messages({
+            'number.base': 'L\'ID de l\'opérateur doit être un nombre',
+            'number.integer': 'L\'ID de l\'opérateur doit être un entier',
+            'number.positive': 'L\'ID de l\'opérateur doit être un nombre positif',
+            'any.required': 'L\'ID de l\'opérateur est obligatoire'
+        }),
 
-// Règles de validation pour la création d'un plan
-createPlanValidation = [
-    ...commonValidations,
-    body('name').custom(async (value) => {
+    name: Joi.string()
+        .max(100)
+        .required()
+        .messages({
+            'string.base': 'Le nom doit être une chaîne de caractères',
+            'string.empty': 'Le nom du plan est requis',
+            'string.max': 'Le nom ne doit pas dépasser 100 caractères',
+            'any.required': 'Le nom du plan est obligatoire'
+        }),
+
+    description: Joi.string()
+        .max(500)
+        .allow('', null)
+        .optional()
+        .messages({
+            'string.base': 'La description doit être une chaîne de caractères',
+            'string.max': 'La description ne doit pas dépasser 500 caractères'
+        }),
+
+    price: Joi.number()
+        .positive()
+        .required()
+        .messages({
+            'number.base': 'Le prix doit être un nombre',
+            'number.positive': 'Le prix doit être un nombre positif',
+            'any.required': 'Le prix est obligatoire'
+        }),
+
+    type: Joi.string()
+        .valid('credit', 'minutes', 'internet')
+        .required()
+        .messages({
+            'string.base': 'Le type doit être une chaîne de caractères',
+            'any.only': 'Type de plan invalide. Doit être \'credit\', \'minutes\' ou \'internet\'',
+            'any.required': 'Le type de plan est obligatoire'
+        }),
+
+    validity_days: Joi.number()
+        .integer()
+        .positive()
+        .optional()
+        .messages({
+            'number.base': 'La validité doit être un nombre',
+            'number.integer': 'La validité doit être un nombre entier',
+            'number.positive': 'La validité doit être un nombre de jours positif'
+        }),
+
+    ussd_code: Joi.string()
+        .required()
+        .messages({
+            'string.base': 'Le code USSD doit être une chaîne de caractères',
+            'string.empty': 'Le code USSD est requis',
+            'any.required': 'Le code USSD est obligatoire'
+        }),
+
+    active: Joi.boolean()
+        .default(true)
+        .messages({
+            'boolean.base': 'Le statut actif doit être un booléen'
+        })
+});
+
+// Validation pour la création d'un plan
+const createPlanValidation = (data) => {
+    const schema = planSchema.keys({
         // Vérification d'unicité du nom pourrait être ajoutée ici
-        return true;
-    })
-];
+        name: planSchema.extract('name')
+    });
+    
+    return schema.validate(data, { abortEarly: false });
+};
 
-// Règles de validation pour la mise à jour d'un plan
-updatePlanValidation = [
-    ...commonValidations.map(validation => validation.optional()),
-    param('id')
-        .isInt({ min: 1 }).withMessage('ID de plan invalide')
-];
+// Validation pour la mise à jour d'un plan
+const updatePlanValidation = (data) => {
+    const schema = Joi.object({
+        operator_id: Joi.number()
+            .integer()
+            .positive()
+            .messages({
+                'number.base': 'L\'ID de l\'opérateur doit être un nombre',
+                'number.integer': 'L\'ID de l\'opérateur doit être un entier',
+                'number.positive': 'L\'ID de l\'opérateur doit être un nombre positif'
+            }),
+        name: Joi.string()
+            .max(100)
+            .messages({
+                'string.base': 'Le nom doit être une chaîne de caractères',
+                'string.empty': 'Le nom du plan est requis',
+                'string.max': 'Le nom ne doit pas dépasser 100 caractères'
+            }),
+        description: Joi.string()
+            .max(500)
+            .allow('', null)
+            .messages({
+                'string.base': 'La description doit être une chaîne de caractères',
+                'string.max': 'La description ne doit pas dépasser 500 caractères'
+            }),
+        price: Joi.number()
+            .positive()
+            .messages({
+                'number.base': 'Le prix doit être un nombre',
+                'number.positive': 'Le prix doit être un nombre positif'
+            }),
+        type: Joi.string()
+            .valid('credit', 'minutes', 'internet')
+            .messages({
+                'string.base': 'Le type doit être une chaîne de caractères',
+                'any.only': 'Type de plan invalide. Doit être \'credit\', \'minutes\' ou \'internet\''
+            }),
+        validity_days: Joi.number()
+            .integer()
+            .positive()
+            .messages({
+                'number.base': 'La validité doit être un nombre',
+                'number.integer': 'La validité doit être un nombre entier',
+                'number.positive': 'La validité doit être un nombre de jours positif'
+            }),
+        ussd_code: Joi.string()
+            .messages({
+                'string.base': 'Le code USSD doit être une chaîne de caractères',
+                'string.empty': 'Le code USSD est requis'
+            }),
+        active: Joi.boolean()
+            .messages({
+                'boolean.base': 'Le statut actif doit être un booléen'
+            })
+    }).min(1); // Au moins un champ doit être fourni pour la mise à jour
+    
+    return schema.validate(data, { abortEarly: false });
+};
 
-// Règles de validation pour la récupération des plans
-getPlansValidation = [
-    query('includeInactive')
-        .optional()
-        .isBoolean().withMessage('Le paramètre includeInactive doit être un booléen')
-        .toBoolean()
-];
+// Validation pour la récupération des plans
+const getPlansValidation = (query) => {
+    const schema = Joi.object({
+        includeInactive: Joi.boolean()
+            .default(false)
+            .messages({
+                'boolean.base': 'Le paramètre includeInactive doit être un booléen'
+            })
+    });
+    
+    return schema.validate(query);
+};
 
-// Règles de validation pour la récupération par ID
-getPlanByIdValidation = [
-    param('id')
-        .isInt({ min: 1 }).withMessage('ID de plan invalide')
-];
+// Validation pour l'ID de plan
+const planIdValidation = (id) => {
+    const schema = Joi.number()
+        .integer()
+        .positive()
+        .required()
+        .messages({
+            'number.base': 'L\'ID du plan doit être un nombre',
+            'number.integer': 'L\'ID du plan doit être un entier',
+            'number.positive': 'L\'ID du plan doit être un nombre positif',
+            'any.required': 'L\'ID du plan est obligatoire'
+        });
+    
+    return schema.validate(id);
+};
 
-// Règles de validation pour la suppression
-deletePlanValidation = [
-    param('id')
-        .isInt({ min: 1 }).withMessage('ID de plan invalide')
-];
+// Validation pour l'ID d'opérateur
+const operatorIdValidation = (id) => {
+    const schema = Joi.number()
+        .integer()
+        .positive()
+        .required()
+        .messages({
+            'number.base': 'L\'ID de l\'opérateur doit être un nombre',
+            'number.integer': 'L\'ID de l\'opérateur doit être un entier',
+            'number.positive': 'L\'ID de l\'opérateur doit être un nombre positif',
+            'any.required': 'L\'ID de l\'opérateur est obligatoire'
+        });
+    
+    return schema.validate(id);
+};
 
-// Règles de validation pour la récupération par opérateur
-getPlansByOperatorValidation = [
-    param('operatorId')
-        .isInt({ min: 1 }).withMessage('ID d\'opérateur invalide')
-];
-
-// Règles de validation pour la recherche par numéro de téléphone
-findPlansByPhoneNumberValidation = [
-    param('phoneNumber')
-        .notEmpty().withMessage('Le numéro de téléphone est requis')
-        .isMobilePhone('any').withMessage('Numéro de téléphone invalide')
-];
+// Validation pour le numéro de téléphone
+const phoneNumberValidation = (phoneNumber) => {
+    const schema = Joi.string()
+        .pattern(/^(01|05|07)[0-9]{8}$/)
+        .required()
+        .messages({
+            'string.base': 'Le numéro de téléphone doit être une chaîne de caractères',
+            'string.pattern.base': 'Le numéro de téléphone doit être un numéro ivoirien valide (commençant par 01, 05 ou 07 suivi de 8 chiffres)',
+            'any.required': 'Le numéro de téléphone est obligatoire'
+        });
+    
+    return schema.validate(phoneNumber);
+};
 
 module.exports = {
     createPlanValidation,
     updatePlanValidation,
     getPlansValidation,
-    getPlanByIdValidation,
-    deletePlanValidation,
-    getPlansByOperatorValidation,
-    findPlansByPhoneNumberValidation
+    planIdValidation,
+    operatorIdValidation,
+    phoneNumberValidation
 };

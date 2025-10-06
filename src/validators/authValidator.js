@@ -1,43 +1,85 @@
 /**
- * Validateurs pour l'authentification - STUB pour developpeur junior
- * 
- * Ce fichier contient des validations minimales avec Joi.
- * Le developpeur junior devra enrichir les validations selon les besoins.
- * 
- * TODO pour le developpeur junior:
- * - Ajouter validation format numero telephone ivoirien
- * - Valider les prefixes operateurs (07, 05, 01, etc.)
- * - Ajouter validation OTP si necessaire
- * - Implementer validation refresh token
+ * Validateurs pour l'authentification
  */
 
 const Joi = require('joi');
+const db = require('../config/database');
+
+// Fonction pour récupérer les préfixes depuis la base de données
+async function getOperatorPrefixes() {
+  try {
+    const [operators] = await db.query('SELECT prefixes FROM operators');
+    const prefixes = [];
+    
+    // Extraire tous les préfixes uniques
+    operators.forEach(operator => {
+      try {
+        const opPrefixes = JSON.parse(operator.prefixes);
+        opPrefixes.forEach(prefix => {
+          if (!prefixes.includes(prefix)) {
+            prefixes.push(prefix);
+          }
+        });
+      } catch (e) {
+        console.error('Erreur lors du parsing des préfixes:', e);
+      }
+    });
+    
+    return prefixes;
+  } catch (error) {
+    console.error('Erreur lors de la récupération des opérateurs:', error);
+    // Retourner des valeurs par défaut en cas d'erreur
+    return ['01', '05', '07'];
+  }
+}
+
+// Fonction utilitaire pour créer le pattern de validation
+function createPhonePattern(prefixes) {
+  return new RegExp(`^(${prefixes.join('|')})[0-9]{8}$`);
+}
 
 /**
  * Middleware de validation pour la route login
  */
-const login = (req, res, next) => {
-  const schema = Joi.object({
-    phoneNumber: Joi.string()
-      .required()
-      .min(8)
-      .max(15)
-      .pattern(/^[0-9+]+$/)
-      .messages({
-        'string.empty': 'Le numero de telephone est requis',
-        'string.min': 'Le numero doit contenir au moins 8 chiffres',
-        'string.max': 'Le numero ne peut pas depasser 15 chiffres',
-        'string.pattern.base': 'Le numero ne peut contenir que des chiffres et +'
-        
-      })
-  });
+const login = async (req, res, next) => {
+  try {
+    // Récupérer les préfixes depuis la base de données
+    const prefixes = await getOperatorPrefixes();
+    if (!prefixes || prefixes.length === 0) {
+      return res.status(500).json({
+        error: 'Erreur serveur',
+        details: 'Impossible de récupérer les préfixes des opérateurs'
+      });
+    }
 
-  const { error } = schema.validate(req.body);
-  
-  if (error) {
-    return res.status(400).json({
-      error: 'Donnees invalides',
-      details: error.details[0].message
+    const phonePattern = createPhonePattern(prefixes);
+    
+    const schema = Joi.object({
+      phoneNumber: Joi.string()
+        .required()
+        .trim()
+        .pattern(phonePattern)
+        .messages({
+          'string.empty': 'Le numéro de téléphone est requis',
+          'string.pattern.base': `Le numéro doit commencer par l'un des préfixes valides (${prefixes.join(', ')}) et contenir 10 chiffres au total`
+        })
+    });
+
+    const { error } = schema.validate(req.body);
+    
+    if (error) {
+      return res.status(400).json({
+        error: 'Donnees invalides',
+        details: error.details[0].message
+      });
+    }
+    
+    next();
+  } catch (error) {
+    console.error('Erreur lors de la validation du numéro:', error);
+    return res.status(500).json({
+      error: 'Erreur serveur',
+      details: 'Une erreur est survenue lors de la validation du numéro'
     });
   }
   
