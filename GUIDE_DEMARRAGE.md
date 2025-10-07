@@ -131,8 +131,15 @@ pnpm run lint       # Linting (à configurer)
 
 # Docker
 docker-compose -p kbine up -d      # Démarrer tous services
+docker-compose -p kbine up -d --build # Démarrer tous services avec build
 docker-compose -p kbine down       # Arrêter tous services
 docker-compose -p kbine logs -f    # Voir tous les logs
+docker-compose -p kbine ps         # Voir les services en cours
+docker-compose -p kbine down --volumes # Arrêter et supprimer les volumes
+docker-compose -p kbine down --rmi all # Arrêter et supprimer les images
+docker-compose -p kbine down --remove-orphans # Arrêter et supprimer les orphelins
+docker-compose -p kbine down --remove-orphans --volumes --rmi all # Arrêter et supprimer tous
+docker-compose -p kbine down --remove-orphans --volumes --rmi all --build # Arrêter et supprimer tous avec build
 ```
 
 ## 🏆 Status : PRÊT POUR LE DÉVELOPPEMENT
