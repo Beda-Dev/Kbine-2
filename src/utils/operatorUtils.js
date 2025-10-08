@@ -69,8 +69,40 @@ const getOperatorByPhoneNumber = async (phoneNumber) => {
         // Trouver l'opérateur dont un des préfixes correspond au numéro
         for (const operator of operators) {
             try {
-                const prefixes = JSON.parse(operator.prefixes);
-                if (prefixes.some(prefix => localNumber.startsWith(prefix))) {
+                let prefixes = [];
+                
+                // Gestion des différents formats de préfixes
+                if (typeof operator.prefixes === 'string') {
+                    try {
+                        // Essayer de parser comme JSON
+                        if (operator.prefixes.trim().startsWith('[')) {
+                            prefixes = JSON.parse(operator.prefixes);
+                        } 
+                        // Si c'est une chaîne simple avec des virgules
+                        else if (operator.prefixes.includes(',')) {
+                            prefixes = operator.prefixes.split(',').map(p => p.trim());
+                        }
+                        // Si c'est un seul préfixe
+                        else {
+                            prefixes = [operator.prefixes.trim()];
+                        }
+                    } catch (e) {
+                        console.warn(`Format de préfixe inattendu pour l'opérateur ${operator.name}:`, operator.prefixes);
+                        // Essayer de récupérer le préfixe directement
+                        prefixes = [String(operator.prefixes).trim()];
+                    }
+                } 
+                // Si c'est déjà un tableau
+                else if (Array.isArray(operator.prefixes)) {
+                    prefixes = operator.prefixes;
+                }
+                // Si c'est un nombre
+                else if (typeof operator.prefixes === 'number') {
+                    prefixes = [String(operator.prefixes)];
+                }
+
+                // Vérifier si le numéro commence par un des préfixes
+                if (prefixes.some(prefix => localNumber.startsWith(String(prefix)))) {
                     return {
                         id: operator.id,
                         name: operator.name,
@@ -78,7 +110,7 @@ const getOperatorByPhoneNumber = async (phoneNumber) => {
                     };
                 }
             } catch (e) {
-                console.error('Erreur lors du parsing des préfixes:', e);
+                console.error('Erreur lors du traitement des préfixes:', e, 'Préfixes:', operator.prefixes);
                 continue;
             }
         }

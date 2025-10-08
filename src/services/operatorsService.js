@@ -37,7 +37,7 @@ const create = async (operatorData) => {
 const findById = async (operatorId) => {
     try {
         const [rows] = await db.execute(
-            'SELECT id, name, code, JSON_ARRAY(prefixes) as prefixes, created_at FROM operators WHERE id = ?', 
+            'SELECT id, name, code, prefixes, created_at FROM operators', 
             [operatorId]
         );
         
@@ -71,7 +71,7 @@ const findById = async (operatorId) => {
 const findByCode = async (code) => {
     try {
         const [rows] = await db.execute(
-            'SELECT id, name, code, JSON_ARRAY(prefixes) as prefixes, created_at FROM operators WHERE code = ?', 
+            'SELECT id, name, code, prefixes, created_at FROM operators WHERE code = ?', 
             [code]
         );
         
@@ -104,7 +104,7 @@ const findByCode = async (code) => {
 const findAll = async () => {
     try {
         const [rows] = await db.execute(
-            'SELECT id, name, code, JSON_ARRAY(prefixes) as prefixes, created_at FROM operators ORDER BY name'
+            'SELECT id, name, code, prefixes, created_at FROM operators ORDER BY name'
         );
         
         // Convertir les préfixes en tableau pour chaque opérateur

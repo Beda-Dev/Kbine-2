@@ -14,7 +14,7 @@ const getAllUsers = async (req, res) => {
             requireRole(['admin'])(req, res, async () => {
                 const [rows] = await db.execute('SELECT id, phone_number, role, created_at, updated_at FROM users ORDER BY created_at DESC');
 
-                res.json({
+                return res.json({
                     success: true,
                     message: 'Liste des utilisateurs récupérée avec succès',
                     data: rows,
@@ -24,7 +24,7 @@ const getAllUsers = async (req, res) => {
         });
     } catch (error) {
         logger.error('Erreur lors de la récupération des utilisateurs:', error);
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             error: 'Erreur serveur lors de la récupération des utilisateurs'
         });
@@ -60,7 +60,7 @@ const getUserById = async (req, res) => {
                 });
             }
 
-            res.json({
+            return res.json({
                 success: true,
                 message: 'Utilisateur récupéré avec succès',
                 data: rows[0]
@@ -68,7 +68,7 @@ const getUserById = async (req, res) => {
         });
     } catch (error) {
         logger.error('Erreur lors de la récupération de l\'utilisateur:', error);
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             error: 'Erreur serveur lors de la récupération de l\'utilisateur'
         });
@@ -84,7 +84,7 @@ const createUser = async (req, res) => {
         authenticateToken(req, res, async () => {
             requireRole(['admin'])(req, res, async () => {
                 // Validation des données d'entrée
-                const { error, value } = userValidator.validate(req.body);
+                const { error, value } = await userValidator.validateAsync(req.body);
                 if (error) {
                     return res.status(400).json({
                         success: false,
@@ -114,7 +114,7 @@ const createUser = async (req, res) => {
                     [phone_number, role]
                 );
 
-                res.status(201).json({
+                return res.status(201).json({
                     success: true,
                     message: 'Utilisateur créé avec succès',
                     data: {
@@ -127,7 +127,7 @@ const createUser = async (req, res) => {
         });
     } catch (error) {
         logger.error('Erreur lors de la création de l\'utilisateur:', error);
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             error: 'Erreur serveur lors de la création de l\'utilisateur'
         });
@@ -147,27 +147,39 @@ const updateUser = async (req, res) => {
             if (req.user.id !== userId && req.user.role !== 'admin') {
                 return res.status(403).json({
                     success: false,
-                    error: 'Accès non autorisé'
+                    error: 'Accès non autorisé',
+                    details: 'Vous ne pouvez pas modifier les informations de cet utilisateur'
                 });
             }
 
             // Validation des données d'entrée
-            const { error, value } = userUpdateValidator.validate(req.body);
-            if (error) {
+            let validatedData;
+            try {
+                validatedData = await userUpdateValidator.validateAsync(req.body, { 
+                    abortEarly: false,
+                    stripUnknown: true
+                });
+            } catch (validationError) {
+                const errors = validationError.details.map(detail => ({
+                    field: detail.path[0],
+                    message: detail.message
+                }));
+                
                 return res.status(400).json({
                     success: false,
                     error: 'Données invalides',
-                    details: error.details[0].message
+                    details: errors
                 });
             }
 
-            const { phone_number, role } = value;
+            const { phone_number, role } = validatedData;
 
             // Si l'utilisateur n'est pas admin, il ne peut pas changer son rôle
             if (req.user.role !== 'admin' && role && role !== req.user.role) {
                 return res.status(403).json({
                     success: false,
-                    error: 'Vous ne pouvez pas modifier votre rôle'
+                    error: 'Accès refusé',
+                    details: 'Vous ne pouvez pas modifier votre rôle'
                 });
             }
 
@@ -222,7 +234,7 @@ const updateUser = async (req, res) => {
                 });
             }
 
-            res.json({
+            return res.json({
                 success: true,
                 message: 'Utilisateur mis à jour avec succès',
                 data: {
@@ -234,7 +246,7 @@ const updateUser = async (req, res) => {
         });
     } catch (error) {
         logger.error('Erreur lors de la mise à jour de l\'utilisateur:', error);
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             error: 'Erreur serveur lors de la mise à jour de l\'utilisateur'
         });
@@ -272,13 +284,19 @@ const deleteUser = async (req, res) => {
                     });
                 }
 
-                // Suppression de l'utilisateur
+                // CORRECTION: Supprimer d'abord les sessions liées
+                await db.execute(
+                    'DELETE FROM sessions WHERE user_id = ?',
+                    [userId]
+                );
+
+                // Ensuite supprimer l'utilisateur
                 const [result] = await db.execute(
                     'DELETE FROM users WHERE id = ?',
                     [userId]
                 );
 
-                res.json({
+                return res.json({
                     success: true,
                     message: 'Utilisateur supprimé avec succès',
                     data: {
@@ -290,7 +308,7 @@ const deleteUser = async (req, res) => {
         });
     } catch (error) {
         logger.error('Erreur lors de la suppression de l\'utilisateur:', error);
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             error: 'Erreur serveur lors de la suppression de l\'utilisateur'
         });
@@ -304,7 +322,7 @@ const deleteUser = async (req, res) => {
 const getProfile = async (req, res) => {
     try {
         authenticateToken(req, res, async () => {
-            res.json({
+            return res.json({
                 success: true,
                 message: 'Profil récupéré avec succès',
                 data: {
@@ -318,7 +336,7 @@ const getProfile = async (req, res) => {
         });
     } catch (error) {
         logger.error('Erreur lors de la récupération du profil:', error);
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             error: 'Erreur serveur lors de la récupération du profil'
         });

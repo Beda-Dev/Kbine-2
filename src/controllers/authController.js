@@ -16,12 +16,16 @@ const userService = require('../services/userService');
 const logger = require('../utils/logger');
 const { generateToken, generateRefreshToken, verifyRefreshToken } = require('../utils/jwt');
 const db = require('../config/database');
+const jwt = require('jsonwebtoken');
+
 
 /**
  * POST /api/auth/login
  * Authentification par numéro de téléphone avec création automatique
  */
 const login = async (req, res) => {
+
+ 
   try {
     const { phoneNumber } = req.body;
 
@@ -35,17 +39,29 @@ const login = async (req, res) => {
     let isNewUser = false;
 
     if (!user) {
-      // Création d'un nouvel utilisateur
-      user = await userService.create({
-        phoneNumber: phoneNumber,
-        role: 'client'
-      });
-      isNewUser = true;
-      
-      logger.info('Nouvel utilisateur créé lors du login', {
-        userId: user.id,
-        phoneNumber: user.phone_number
-      });
+      try {
+        // Création d'un nouvel utilisateur
+        user = await userService.create({
+          phoneNumber: phoneNumber,
+          role: 'client'
+        });
+        isNewUser = true;
+
+        logger.info('Nouvel utilisateur créé lors du login', {
+          userId: user.id,
+          phoneNumber: user.phone_number
+        });
+
+      } catch (error) {
+        if (error.code === 'ER_DUP_ENTRY') {
+          // Gérer le cas de course (race condition)
+          user = await userService.findByPhoneNumber(phoneNumber);
+        } else {
+          throw error;
+        }
+
+      }
+
     } else {
       logger.info('Utilisateur existant connecté', {
         userId: user.id,
@@ -68,7 +84,7 @@ const login = async (req, res) => {
     );
 
     // Réponse avec les informations utilisateur et tokens
-    res.status(200).json({
+    return res.status(200).json({
       token: token,
       // refreshToken: refreshToken,
       user: {
@@ -81,7 +97,7 @@ const login = async (req, res) => {
 
   } catch (error) {
     logger.error('Erreur lors du login:', error);
-    res.status(500).json({ error: 'Erreur serveur lors de la connexion' });
+    return res.status(500).json({ error: 'Erreur serveur lors de la connexion' });
   }
 };
 
@@ -134,7 +150,7 @@ const refreshToken = async (req, res) => {
 
     logger.info('Token rafraîchi', { userId: user.id });
 
-    res.status(200).json({
+    return res.status(200).json({
       token: newToken,
       // refreshToken: newRefreshToken,
       user: {
@@ -146,7 +162,7 @@ const refreshToken = async (req, res) => {
 
   } catch (error) {
     logger.error('Erreur lors du refresh token:', error);
-    res.status(500).json({ error: 'Erreur serveur lors du rafraîchissement' });
+    return res.status(500).json({ error: 'Erreur serveur lors du rafraîchissement' });
   }
 };
 
@@ -177,13 +193,13 @@ const logout = async (req, res) => {
 
     logger.info('Utilisateur déconnecté');
 
-    res.status(200).json({
+    return res.status(200).json({
       message: 'Déconnexion réussie'
     });
 
   } catch (error) {
     logger.error('Erreur lors du logout:', error);
-    res.status(500).json({ error: 'Erreur serveur lors de la déconnexion' });
+    return res.status(500).json({ error: 'Erreur serveur lors de la déconnexion' });
   }
 };
 

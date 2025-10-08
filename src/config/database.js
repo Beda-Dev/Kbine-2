@@ -40,9 +40,10 @@ const config = {
   connectionLimit: 10, // Nombre maximum de connexions simultanees
   queueLimit: 0, // Pas de limite sur la file d'attente (0 = illimite)
   
-  // ===== PARAMETRES DE TIMEOUT =====
-  acquireTimeout: 60000, // Timeout pour obtenir une connexion (60 sec)
-  timeout: 60000 // Timeout pour les requetes SQL (60 sec)
+  // ===== PARAMETRES DE TIMEOUT (CORRIGES) =====
+  // CORRECTION: Utilisation des options valides pour mysql2
+  connectTimeout: 60000, // Timeout pour etablir la connexion (60 sec)
+  // Note: acquireTimeout et timeout ne sont pas des options valides pour mysql2
 };
 
 // ===============================
@@ -106,12 +107,31 @@ testConnection();
 // ===============================
 
 /**
- * Export du pool de connexions
+ * Export d'un objet avec la méthode execute
  * 
- * Ce pool sera utilise dans les repositories pour executer les requetes SQL
+ * Cet objet sera utilise dans les contrôleurs pour executer les requêtes SQL
  * 
- * Exemple d'utilisation dans un repository:
+ * Exemple d'utilisation dans un contrôleur:
  * const db = require('../config/database');
  * const [rows] = await db.execute('SELECT * FROM users WHERE id = ?', [userId]);
  */
-module.exports = pool;
+module.exports = {
+    execute: async (sql, params) => {
+        const connection = await pool.getConnection();
+        try {
+            const [rows] = await connection.execute(sql, params);
+            return rows;  // Retourne directement les résultats
+        } finally {
+            connection.release();
+        }
+    },
+    query: async (sql, params) => {
+        const connection = await pool.getConnection();
+        try {
+            const [rows] = await connection.query(sql, params);
+            return rows;  // Retourne directement les résultats
+        } finally {
+            connection.release();
+        }
+    }
+};

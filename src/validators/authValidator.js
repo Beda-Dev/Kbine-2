@@ -8,28 +8,71 @@ const db = require('../config/database');
 // Fonction pour récupérer les préfixes depuis la base de données
 async function getOperatorPrefixes() {
   try {
-    const [operators] = await db.query('SELECT prefixes FROM operators');
+    const operators = await db.query('SELECT prefixes FROM operators');
     const prefixes = [];
+    
+    // Vérifier si operators est un tableau
+    if (!Array.isArray(operators)) {
+      console.error('Erreur: les opérateurs ne sont pas un tableau:', operators);
+      return [];
+    }
     
     // Extraire tous les préfixes uniques
     operators.forEach(operator => {
       try {
-        const opPrefixes = JSON.parse(operator.prefixes);
+        let opPrefixes;
+        
+        // CORRECTION: Gestion robuste du parsing JSON
+        if (typeof operator.prefixes === 'string') {
+          // Si c'est une chaîne, tenter de la parser
+          if (operator.prefixes.startsWith('[')) {
+            // C'est un tableau JSON
+            opPrefixes = JSON.parse(operator.prefixes);
+          } else if (operator.prefixes.includes(',')) {
+            // C'est une liste séparée par virgules
+            opPrefixes = operator.prefixes.split(',').map(p => p.trim());
+          } else {
+            // C'est un seul préfixe
+            opPrefixes = [operator.prefixes.trim()];
+          }
+        } else if (Array.isArray(operator.prefixes)) {
+          // C'est déjà un tableau
+          opPrefixes = operator.prefixes;
+        } else if (typeof operator.prefixes === 'number') {
+          // C'est un nombre
+          opPrefixes = [String(operator.prefixes).padStart(2, '0')];
+        } else {
+          // Type inattendu, on ignore
+          console.warn('Type de préfixe inattendu:', typeof operator.prefixes);
+          return;
+        }
+        
+        // Ajouter les préfixes uniques
         opPrefixes.forEach(prefix => {
-          if (!prefixes.includes(prefix)) {
-            prefixes.push(prefix);
+          const cleanPrefix = String(prefix).trim();
+          if (cleanPrefix && !prefixes.includes(cleanPrefix)) {
+            prefixes.push(cleanPrefix);
           }
         });
       } catch (e) {
         console.error('Erreur lors du parsing des préfixes:', e);
+        console.error('Valeur problématique:', operator.prefixes);
+        // En cas d'erreur sur un opérateur, on continue avec les autres
       }
     });
-    
+
+    if (prefixes.length === 0) {
+      // Retourner des valeurs par défaut si aucun préfixe n'est trouvé
+      console.warn('Aucun préfixe trouvé en base, utilisation des valeurs par défaut');
+      return ['07', '05', '01'];
+    }
+
+    console.log('Préfixes chargés:', prefixes);
     return prefixes;
   } catch (error) {
-    console.error('Erreur lors de la récupération des opérateurs:', error);
-    // Retourner des valeurs par défaut en cas d'erreur
-    return ['01', '05', '07'];
+    console.error('Erreur lors de la récupération des préfixes:', error);
+    // En cas d'erreur critique, retourner des valeurs par défaut
+    return ['07', '05', '01'];
   }
 }
 
@@ -82,8 +125,6 @@ const login = async (req, res, next) => {
       details: 'Une erreur est survenue lors de la validation du numéro'
     });
   }
-  
-  next();
 };
 
 /**

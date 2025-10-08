@@ -11,79 +11,105 @@
  * - Ajouter la logique de creation automatique des comptes
  * - Implementer la gestion des roles (client, staff, admin)
  */
+const PHONE_NUMBER_REGEX = /^(\+225|0)[0-9]{10}$/;
 
 /**
  * Rechercher un utilisateur par ID
- * @param {number} userId - ID de l'utilisateur
- * @returns {object|null} Utilisateur ou null si non trouve
  */
 const findById = async (userId) => {
+  if (!userId || isNaN(parseInt(userId, 10))) {
+    throw new Error('ID utilisateur invalide');
+  }
+
   try {
-    // TODO: Implementer la vraie requete base de donnees
     const db = require('../config/database');
-    const [rows] = await db.execute('SELECT * FROM users WHERE id = ?', [userId]);
+    const [rows] = await db.execute(
+      'SELECT id, phone_number as phoneNumber, role, created_at as createdAt FROM users WHERE id = ? AND deleted_at IS NULL', 
+      [userId]
+    );
     return rows[0] || null;
-    
-    // // Stub temporaire
-    // if (userId === 1) {
-    //   return {
-    //     id: 1,
-    //     phoneNumber: '0701234567',
-    //     role: 'client',
-    //     createdAt: new Date()
-    //   };
-    // }
-    
-    // return null;
   } catch (error) {
     console.error('Erreur findById:', error);
-    throw error;
+    throw new Error('Erreur lors de la recherche de l\'utilisateur');
   }
 };
 
 /**
- * Rechercher un utilisateur par numero de telephone
- * @param {string} phoneNumber - Numero de telephone
- * @returns {object|null} Utilisateur ou null si non trouve
+ * Rechercher un utilisateur par numéro de téléphone
  */
 const findByPhoneNumber = async (phoneNumber) => {
+  if (!phoneNumber || !PHONE_NUMBER_REGEX.test(phoneNumber)) {
+    throw new Error('Numéro de téléphone invalide');
+  }
+
   try {
-    // TODO: Implementer la vraie requete base de donnees
     const db = require('../config/database');
-    const [rows] = await db.execute('SELECT * FROM users WHERE phone_number = ?', [phoneNumber]);
+    const [rows] = await db.execute(
+      'SELECT id, phone_number as phoneNumber, role, created_at as createdAt FROM users WHERE phone_number = ? AND deleted_at IS NULL',
+      [phoneNumber]
+    );
     return rows[0] || null;
-    
   } catch (error) {
     console.error('Erreur findByPhoneNumber:', error);
-    throw error;
+    throw new Error('Erreur lors de la recherche par numéro de téléphone');
   }
 };
 
 /**
- * Creer un nouvel utilisateur
- * @param {object} userData - Donnees utilisateur
- * @returns {object} Utilisateur cree
+ * Créer un nouvel utilisateur
  */
 const create = async (userData) => {
+  const { phoneNumber, role = 'client' } = userData || {};
+
+  if (!phoneNumber || !PHONE_NUMBER_REGEX.test(phoneNumber)) {
+    throw new Error('Numéro de téléphone invalide');
+  }
+
+  if (!['client', 'staff', 'admin'].includes(role)) {
+    throw new Error('Rôle utilisateur invalide');
+  }
+
+  const db = require('../config/database');
+  const connection = await db.getConnection();
+
   try {
-    // TODO: Implementer la vraie insertion base de donnees
-    const db = require('../config/database');
-    const [result] = await db.execute(
-      'INSERT INTO users (phone_number, role) VALUES (?, ?)',
-      [userData.phoneNumber, userData.role || 'client']
+    await connection.beginTransaction();
+
+    // Vérifier l'existence de l'utilisateur dans la même transaction
+    const [existingUser] = await connection.execute(
+      'SELECT id FROM users WHERE phone_number = ? AND deleted_at IS NULL FOR UPDATE',
+      [phoneNumber]
     );
+
+    if (existingUser.length > 0) {
+      return findById(existingUser[0].id);
+    }
+
+    // Création de l'utilisateur
+    const [result] = await connection.execute(
+      'INSERT INTO users (phone_number, role) VALUES (?, ?)',
+      [phoneNumber, role]
+    );
+
+    if (!result || !result.insertId) {
+      throw new Error('Échec de la création de l\'utilisateur');
+    }
+
+    await connection.commit();
     return findById(result.insertId);
-    
-    // // Stub temporaire
-    // return {
-    //   id: Math.floor(Math.random() * 1000),
-    //   phoneNumber: userData.phoneNumber,
-    //   role: userData.role || 'client',
-    //   createdAt: new Date()
-    // };
+
   } catch (error) {
+    await connection.rollback();
     console.error('Erreur create user:', error);
-    throw error;
+    
+    if (error.code === 'ER_DUP_ENTRY') {
+      // Si une autre requête a créé l'utilisateur entre-temps
+      return findByPhoneNumber(phoneNumber);
+    }
+    
+    throw new Error(`Erreur lors de la création de l'utilisateur: ${error.message}`);
+  } finally {
+    connection.release();
   }
 };
 

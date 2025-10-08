@@ -121,16 +121,18 @@ app.set('io', io);
  * Seule la route d'authentification est implementee pour commencer
  * Le developpeur junior devra implementer les autres routes selon ses besoins
  */
-app.use('/api/auth', authRoutes); // /api/auth/* - Authentification
-
-// TODO: Ajouter les autres routes une fois implementees
-app.use('/api/users', userRoutes); // /api/users/* - Gestion utilisateurs
-app.use('/api/operators', operatorRoutes); // /api/operators/* - Operateurs telecom
-app.use('/api/orders', orderRoutes); // /api/orders/* - Commandes
-app.use('/api/payments', paymentRoutes); // /api/payments/* - Paiements
 
 // ===============================
-// ROUTES UTILITAIRES
+// MONTAGE DES ROUTES
+// ===============================
+app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/operators', operatorRoutes);
+app.use('/api/orders', orderRoutes);
+app.use('/api/payments', paymentRoutes);
+
+// ===============================
+// ROUTES PUBLIQUES
 // ===============================
 
 /**
@@ -142,7 +144,6 @@ app.get('/health', (req, res) => {
   res.status(200).json({ 
     status: 'OK', 
     timestamp: new Date().toISOString(),
-    service: 'kbine-backend'
   });
 });
 

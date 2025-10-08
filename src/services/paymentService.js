@@ -1,6 +1,5 @@
 const db = require('../config/database');
 const logger = require('../utils/logger');
-const { v4: uuidv4 } = require('uuid');
 
 // Types de paiement valides
 const PAYMENT_METHODS = ['wave', 'orange_money', 'mtn_money', 'moov_money'];
@@ -46,7 +45,7 @@ const createPayment = async (paymentData) => {
         validatePaymentData(paymentData);
         
         // Vérifier si un paiement avec cette référence existe déjà
-        const [existingPayment] = await connection.query(
+        const existingPayment = await connection.query(
             'SELECT id FROM payments WHERE payment_reference = ?',
             [paymentData.payment_reference]
         );
@@ -59,7 +58,7 @@ const createPayment = async (paymentData) => {
         const payment = {
             ...paymentData,
             status: 'pending',
-            external_reference: paymentData.external_reference || uuidv4(),
+            external_reference: paymentData.external_reference || Date.now().toString(),
             created_at: new Date(),
             updated_at: new Date()
         };
@@ -96,7 +95,7 @@ const updatePayment = async (id, updateData) => {
         await connection.beginTransaction();
         
         // Vérifier que le paiement existe
-        const [payment] = await connection.query('SELECT * FROM payments WHERE id = ?', [id]);
+        const payment = await connection.query('SELECT * FROM payments WHERE id = ?', [id]);
         
         if (!payment || payment.length === 0) {
             throw new Error('Paiement non trouvé');
@@ -152,7 +151,7 @@ const deletePayment = async (id) => {
         await connection.beginTransaction();
         
         // Vérifier que le paiement existe
-        const [payment] = await connection.query('SELECT * FROM payments WHERE id = ?', [id]);
+        const payment = await connection.query('SELECT * FROM payments WHERE id = ?', [id]);
         
         if (!payment || payment.length === 0) {
             throw new Error('Paiement non trouvé');
@@ -188,7 +187,7 @@ const deletePayment = async (id) => {
  */
 const getPaymentById = async (id) => {
     try {
-        const [payment] = await db.query(
+        const payment = await db.query(
             'SELECT p.*, o.phone_number, o.amount as order_amount ' +
             'FROM payments p ' +
             'JOIN orders o ON p.order_id = o.id ' +
@@ -255,11 +254,11 @@ const getPayments = async ({
         }
         
         const whereClause = whereClauses.length > 0 
-            ? `WHERE ${whereChunks.join(' AND ')}` 
-            : '';
+        ? `WHERE ${whereClauses.join(' AND ')}`  
+        : '';
         
         // Récupération des paiements
-        const [payments] = await db.query(
+        const payments = await db.query(
             `SELECT p.*, o.phone_number, o.amount as order_amount 
              FROM payments p 
              JOIN orders o ON p.order_id = o.id 
@@ -270,7 +269,7 @@ const getPayments = async ({
         );
         
         // Comptage total pour la pagination
-        const [countResult] = await db.query(
+        const countResult = await db.query(
             `SELECT COUNT(*) as total 
              FROM payments p 
              ${whereClause}`,
@@ -332,7 +331,7 @@ const refundPayment = async (id, reason) => {
         await connection.beginTransaction();
         
         // Vérifier que le paiement existe et peut être remboursé
-        const [payment] = await connection.query(
+        const payment = await connection.query(
             'SELECT * FROM payments WHERE id = ? AND status = ?',
             [id, 'success']
         );
@@ -372,7 +371,7 @@ const refundPayment = async (id, reason) => {
  */
 const isPaymentComplete = async (orderId) => {
     try {
-        const [payment] = await db.query(
+        const payment = await db.query(
             'SELECT status FROM payments WHERE order_id = ? ORDER BY created_at DESC LIMIT 1',
             [orderId]
         );

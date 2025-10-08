@@ -142,6 +142,18 @@ docker-compose -p kbine down --remove-orphans --volumes --rmi all # Arrêter et 
 docker-compose -p kbine down --remove-orphans --volumes --rmi all --build # Arrêter et supprimer tous avec build
 ```
 
+# Arrêter les conteneurs
+docker-compose -p kbine down
+
+# Supprimer l'image existante
+docker rmi kbine-kbine
+
+# Reconstruire et relancer les conteneurs
+docker-compose -p kbine up -d --build
+
+# lancer les logs
+docker-compose -p kbine logs -f
+
 ## 🏆 Status : PRÊT POUR LE DÉVELOPPEMENT
 
 Le backend Kbine dispose maintenant d'une base solide avec :

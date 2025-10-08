@@ -60,7 +60,8 @@ const authenticateToken = async (req, res, next) => {
     
     /**
      * Verification et decodage du token JWT
-     * jwt.verify() verifie:
+     * jwt.verify() 
+     * verifie:
      * - La signature du token
      * - La date d'expiration
      * - L'integrite du payload
