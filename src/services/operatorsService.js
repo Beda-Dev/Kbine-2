@@ -37,14 +37,14 @@ const create = async (operatorData) => {
 const findById = async (operatorId) => {
     try {
         const [rows] = await db.execute(
-            'SELECT id, name, code, prefixes, created_at FROM operators', 
+            'SELECT id, name, code, prefixes, created_at FROM operators WHERE id = ?',
             [operatorId]
         );
-        
+
         if (rows.length === 0) {
             return null;
         }
-        
+
         // Convertir les préfixes en tableau si nécessaire
         const operator = rows[0];
         if (operator.prefixes && typeof operator.prefixes === 'string') {
@@ -55,7 +55,7 @@ const findById = async (operatorId) => {
                 operator.prefixes = [];
             }
         }
-        
+
         return operator;
     } catch (error) {
         console.error(`Erreur lors de la recherche de l'opérateur ${operatorId}:`, error);

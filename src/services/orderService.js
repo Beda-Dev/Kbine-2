@@ -27,20 +27,10 @@ const findById = async (orderId) => {
     }
 }
 
-const findAll = async (includeInactive = false) => {
+const findAll = async () => {
     try {
-        let query = 'SELECT * FROM orders';
-        
-        const params = [];
-        
-        if (!includeInactive) {
-            query += ' WHERE active = ?';
-            params.push(true);
-        }
-        
-        query += ' ORDER BY name';
-        
-        const [rows] = await db.execute(query, params);
+        const query = 'SELECT * FROM orders ORDER BY created_at DESC';
+        const [rows] = await db.execute(query, []);
         return rows;
     } catch (error) {
         console.error('Erreur lors de la récupération des commandes:', error);

@@ -108,9 +108,9 @@ testConnection();
 
 /**
  * Export d'un objet avec la méthode execute
- * 
+ *
  * Cet objet sera utilise dans les contrôleurs pour executer les requêtes SQL
- * 
+ *
  * Exemple d'utilisation dans un contrôleur:
  * const db = require('../config/database');
  * const [rows] = await db.execute('SELECT * FROM users WHERE id = ?', [userId]);
@@ -119,8 +119,8 @@ module.exports = {
     execute: async (sql, params) => {
         const connection = await pool.getConnection();
         try {
-            const [rows] = await connection.execute(sql, params);
-            return rows;  // Retourne directement les résultats
+            const result = await connection.execute(sql, params);
+            return result;
         } finally {
             connection.release();
         }
@@ -128,10 +128,13 @@ module.exports = {
     query: async (sql, params) => {
         const connection = await pool.getConnection();
         try {
-            const [rows] = await connection.query(sql, params);
-            return rows;  // Retourne directement les résultats
+            const result = await connection.query(sql, params);
+            return result;
         } finally {
             connection.release();
         }
+    },
+    getConnection: async () => {
+        return await pool.getConnection();
     }
 };

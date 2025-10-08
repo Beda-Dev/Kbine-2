@@ -24,7 +24,7 @@ const findById = async (userId) => {
   try {
     const db = require('../config/database');
     const [rows] = await db.execute(
-      'SELECT id, phone_number as phoneNumber, role, created_at as createdAt FROM users WHERE id = ? AND deleted_at IS NULL', 
+      'SELECT id, phone_number as phone_number, role, created_at as createdAt FROM users WHERE id = ?',
       [userId]
     );
     return rows[0] || null;
@@ -45,7 +45,7 @@ const findByPhoneNumber = async (phoneNumber) => {
   try {
     const db = require('../config/database');
     const [rows] = await db.execute(
-      'SELECT id, phone_number as phoneNumber, role, created_at as createdAt FROM users WHERE phone_number = ? AND deleted_at IS NULL',
+      'SELECT id, phone_number as phone_number, role, created_at as createdAt FROM users WHERE phone_number = ?',
       [phoneNumber]
     );
     return rows[0] || null;
@@ -77,7 +77,7 @@ const create = async (userData) => {
 
     // Vérifier l'existence de l'utilisateur dans la même transaction
     const [existingUser] = await connection.execute(
-      'SELECT id FROM users WHERE phone_number = ? AND deleted_at IS NULL FOR UPDATE',
+      'SELECT id FROM users WHERE phone_number = ? FOR UPDATE',
       [phoneNumber]
     );
 
