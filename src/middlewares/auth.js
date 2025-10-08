@@ -41,21 +41,31 @@ const logger = require('../utils/logger'); // Systeme de logs
  * @param {Function} next - Fonction pour passer au middleware suivant
  */
 const authenticateToken = async (req, res, next) => {
+  console.log('=== MIDDLEWARE AUTHENTIFICATION ===');
+  console.log(`[auth] Méthode: ${req.method}, URL: ${req.originalUrl}`);
+  
   // ===== EXTRACTION DU TOKEN =====
   
   // Recuperation du header Authorization
   const authHeader = req.headers['authorization'];
+  console.log('[auth] En-tête Authorization:', authHeader ? 'présent' : 'absent');
   
   // Extraction du token (format: "Bearer TOKEN")
-  // authHeader && authHeader.split(' ')[1] evite les erreurs si le header est absent
   const token = authHeader && authHeader.split(' ')[1];
+  console.log('[auth] Token extrait:', token ? 'oui' : 'non');
 
   // Verification de la presence du token
   if (!token) {
-    return res.status(401).json({ error: 'Token d\'acces requis' });
+    console.error('[auth] Erreur: Aucun token fourni');
+    return res.status(401).json({ 
+      error: 'Token d\'accès requis',
+      details: 'Le header Authorization est manquant ou mal formaté (attendu: Bearer <token>)'
+    });
   }
 
   try {
+    console.log('[auth] Tentative de vérification du token JWT');
+    
     // ===== VERIFICATION DU TOKEN JWT =====
     
     /**
@@ -67,48 +77,86 @@ const authenticateToken = async (req, res, next) => {
      * - L'integrite du payload
      */
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'kbine_secret_key');
+    console.log('[auth] Token JWT valide, ID utilisateur:', decoded.userId);
     
     // ===== CHARGEMENT DE L'UTILISATEUR =====
+    console.log(`[auth] Chargement des informations de l'utilisateur ID: ${decoded.userId}`);
     
-    /**
-     * Chargement des informations utilisateur depuis la base de donnees
-     * Important: On recharge toujours depuis la DB pour avoir les infos a jour
-     * (ex: si l'utilisateur a ete desactive entre temps)
-     */
-    const user = await userService.findById(decoded.userId);
-    
-    // Verification que l'utilisateur existe encore
-    if (!user) {
-      return res.status(401).json({ error: 'Utilisateur non trouve' });
+    try {
+      const user = await userService.findById(decoded.userId);
+      
+      // Verification que l'utilisateur existe encore
+      if (!user) {
+        console.error(`[auth] Utilisateur non trouvé en base pour l'ID: ${decoded.userId}`);
+        return res.status(401).json({ 
+          error: 'Utilisateur non trouvé',
+          userId: decoded.userId
+        });
+      }
+      
+      console.log(`[auth] Utilisateur chargé:`, {
+        id: user.id,
+        phoneNumber: user.phone_number,
+        role: user.role
+      });
+      
+      // Ajout de l'utilisateur à la requête
+      req.user = user;
+      
+      // Log des en-têtes de la requête pour le débogage
+      console.log('[auth] En-têtes de la requête:', {
+        'user-agent': req.headers['user-agent'],
+        'x-forwarded-for': req.headers['x-forwarded-for'] || req.connection.remoteAddress
+      });
+      
+      // Passage au middleware suivant
+      console.log('[auth] Authentification réussie, passage au middleware suivant');
+      return next();
+      
+    } catch (userError) {
+      console.error('[auth] Erreur lors du chargement de l\'utilisateur:', {
+        error: userError.message,
+        stack: userError.stack,
+        userId: decoded.userId
+      });
+      return res.status(500).json({ 
+        error: 'Erreur lors du chargement du profil utilisateur',
+        details: process.env.NODE_ENV === 'development' ? userError.message : undefined
+      });
     }
 
-    // ===== AJOUT DE L'UTILISATEUR A LA REQUETE =====
-    
-    /**
-     * Ajout de l'utilisateur a l'objet req
-     * Cela permet aux middlewares et controllers suivants
-     * d'acceder aux infos utilisateur via req.user
-     */
-    req.user = user;
-    
-    // Passage au middleware suivant
-    next();
-    
   } catch (error) {
     // ===== GESTION DES ERREURS =====
+    console.error('[auth] Erreur lors de l\'authentification:', {
+      name: error.name,
+      message: error.message,
+      expiredAt: error.expiredAt,
+      stack: error.stack
+    });
     
-    // Log de l'erreur pour le debugging
-    logger.error('Erreur d\'authentification:', error);
+    // Gestion specifique des erreurs JWT
+    if (error.name === 'JsonWebTokenError') {
+      console.error('[auth] Erreur de validation du token JWT:', error.message);
+      return res.status(403).json({ 
+        error: 'Token invalide',
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
     
-    /**
-     * Retour d'une erreur 403 (Forbidden)
-     * Peut etre cause par:
-     * - Token expire
-     * - Token corrompu
-     * - Signature invalide
-     * - Erreur de connexion a la DB
-     */
-    return res.status(403).json({ error: 'Token invalide' });
+    if (error.name === 'TokenExpiredError') {
+      console.error('[auth] Token JWT expiré, date d\'expiration:', error.expiredAt);
+      return res.status(401).json({ 
+        error: 'Session expirée, veuillez vous reconnecter',
+        expiredAt: error.expiredAt
+      });
+    }
+    
+    // Pour les autres erreurs, renvoyer une erreur generique
+    console.error('[auth] Erreur inattendue lors de l\'authentification:', error);
+    return res.status(500).json({ 
+      error: 'Erreur lors de l\'authentification',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 };
 
@@ -136,35 +184,32 @@ const authenticateToken = async (req, res, next) => {
  * requireRole(['client', 'staff', 'admin']) - Tous les roles
  */
 const requireRole = (roles) => {
-  /**
-   * Middleware retourne par la fonction factory
-   * 
-   * IMPORTANT: Ce middleware doit etre utilise APRES authenticateToken
-   * car il depend de req.user qui est defini par authenticateToken
-   */
   return (req, res, next) => {
-    // ===== VERIFICATION DE L'AUTHENTIFICATION =====
+    console.log(`[auth] Vérification des rôles requis: ${roles.join(', ')}`);
     
-    /**
-     * Verification que l'utilisateur est authentifie
-     * Si req.user n'existe pas, c'est que authenticateToken n'a pas ete appele
-     * ou que l'authentification a echoue
-     */
+    // ===== VERIFICATION DE L'AUTHENTIFICATION =====
     if (!req.user) {
-      return res.status(401).json({ error: 'Authentification requise' });
+      console.error('[auth] Erreur: Utilisateur non authentifié pour la vérification de rôle');
+      return res.status(401).json({ 
+        error: 'Authentification requise',
+        details: 'Le token est manquant ou invalide'
+      });
     }
 
     // ===== VERIFICATION DU ROLE =====
+    console.log(`[auth] Rôle de l'utilisateur: ${req.user.role}`);
     
-    /**
-     * Verification que le role de l'utilisateur est dans la liste autorisee
-     * roles.includes() verifie si req.user.role est present dans le tableau roles
-     */
     if (!roles.includes(req.user.role)) {
-      return res.status(403).json({ error: 'Permissions insuffisantes' });
+      console.error(`[auth] Accès refusé: le rôle ${req.user.role} n'est pas autorisé`);
+      return res.status(403).json({ 
+        error: 'Accès refusé',
+        requiredRoles: roles,
+        userRole: req.user.role,
+        details: `Rôle requis: ${roles.join(' ou ')}`
+      });
     }
-
-    // L'utilisateur a les permissions necessaires, on continue
+    
+    console.log('[auth] Rôle vérifié avec succès');
     next();
   };
 };

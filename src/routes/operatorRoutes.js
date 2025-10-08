@@ -1,3 +1,6 @@
+// ==========================================
+// FILE: operatorRoutes.js
+// ==========================================
 const express = require('express');
 const router = express.Router();
 const { 
@@ -8,36 +11,63 @@ const {
 const { authenticateToken, requireRole } = require('../middlewares/auth');
 const operatorController = require('../controllers/operatorController');
 
-// Middleware pour valider l'ID d'opérateur
-const validateOperatorId = (req, res, next) => {
-    const { error } = operatorIdValidation(parseInt(req.params.id));
-    if (error) {
-        return res.status(400).json({
-            success: false,
-            error: 'ID invalide',
-            details: error.details.map(d => d.message)
-        });
-    }
-    next();
-};
+/**
+ * Routes pour la gestion des opérateurs
+ * 
+ * ORDRE IMPORTANT:
+ * 1. Routes publiques
+ * 2. Middleware d'authentification
+ * 3. Routes protégées
+ */
+
+// ==========================================
+// ROUTES PUBLIQUES (sans authentification)
+// ==========================================
 
 /**
- * @route GET /api/operators
- * @description Récupère tous les opérateurs
- * @access Public
+ * Récupère tous les opérateurs
+ * Route publique - pour afficher les opérateurs disponibles
+ * GET /api/operators
  */
 router.get('/', operatorController.getAllOperators);
 
 /**
- * @route POST /api/operators
- * @description Crée un nouvel opérateur
- * @access Admin/Staff
+ * Récupère un opérateur par son ID
+ * Route publique
+ * GET /api/operators/:id
  */
-router.post(
-    '/', 
-    authenticateToken, 
+router.get('/:id', 
+    (req, res, next) => {
+        const { error } = operatorIdValidation(parseInt(req.params.id));
+        if (error) {
+            return res.status(400).json({
+                success: false,
+                error: 'ID opérateur invalide',
+                details: error.details.map(d => d.message)
+            });
+        }
+        next();
+    },
+    operatorController.getOperatorById
+);
+
+// ==========================================
+// MIDDLEWARE D'AUTHENTIFICATION
+// Toutes les routes ci-dessous nécessitent une authentification
+// ==========================================
+router.use(authenticateToken);
+
+// ==========================================
+// ROUTES PROTÉGÉES - ADMIN/STAFF UNIQUEMENT
+// ==========================================
+
+/**
+ * Crée un nouvel opérateur
+ * POST /api/operators
+ */
+router.post('/', 
     requireRole(['admin', 'staff']), 
-    async (req, res, next) => {
+    (req, res, next) => {
         const { error, value } = createOperatorValidation(req.body);
         if (error) {
             return res.status(400).json({
@@ -53,16 +83,23 @@ router.post(
 );
 
 /**
- * @route PUT /api/operators/:id
- * @description Met à jour un opérateur existant
- * @access Admin/Staff
+ * Met à jour un opérateur existant
+ * PUT /api/operators/:id
  */
-router.put(
-    '/:id',
-    authenticateToken,
+router.put('/:id',
     requireRole(['admin', 'staff']),
-    validateOperatorId,
-    async (req, res, next) => {
+    (req, res, next) => {
+        // Valider l'ID
+        const idValidation = operatorIdValidation(parseInt(req.params.id));
+        if (idValidation.error) {
+            return res.status(400).json({
+                success: false,
+                error: 'ID opérateur invalide',
+                details: idValidation.error.details.map(d => d.message)
+            });
+        }
+        
+        // Valider les données de mise à jour
         const { error, value } = updateOperatorValidation(req.body);
         if (error) {
             return res.status(400).json({
@@ -71,6 +108,7 @@ router.put(
                 details: error.details.map(d => d.message)
             });
         }
+        
         req.validated = value;
         next();
     },
@@ -78,15 +116,22 @@ router.put(
 );
 
 /**
- * @route DELETE /api/operators/:id
- * @description Supprime un opérateur
- * @access Admin/Staff
+ * Supprime un opérateur
+ * DELETE /api/operators/:id
  */
-router.delete(
-    '/:id',
-    authenticateToken,
+router.delete('/:id',
     requireRole(['admin', 'staff']),
-    validateOperatorId,
+    (req, res, next) => {
+        const { error } = operatorIdValidation(parseInt(req.params.id));
+        if (error) {
+            return res.status(400).json({
+                success: false,
+                error: 'ID opérateur invalide',
+                details: error.details.map(d => d.message)
+            });
+        }
+        next();
+    },
     operatorController.deleteOperator
 );
 

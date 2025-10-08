@@ -24,19 +24,24 @@ const jwt = require('jsonwebtoken');
  * Authentification par numéro de téléphone avec création automatique
  */
 const login = async (req, res) => {
-
- 
+  console.log('=== Début de la fonction login ===');
+  console.log('Corps de la requête reçu:', req.body);
+  
   try {
     const { phoneNumber } = req.body;
+    console.log('Tentative de connexion avec le numéro:', phoneNumber);
 
     // Validation des données d'entrée
     if (!phoneNumber) {
+      console.error('Erreur: Aucun numéro de téléphone fourni');
       return res.status(400).json({ error: 'Numéro de téléphone requis' });
     }
 
     // Recherche de l'utilisateur existant
+    console.log('Recherche de l\'utilisateur par numéro de téléphone');
     let user = await userService.findByPhoneNumber(phoneNumber);
     let isNewUser = false;
+    console.log('Utilisateur trouvé:', user ? 'Oui' : 'Non');
 
     if (!user) {
       try {
@@ -70,21 +75,30 @@ const login = async (req, res) => {
     }
 
     // Génération des tokens
+    console.log('Génération des tokens pour l\'utilisateur ID:', user.id);
     const token = generateToken(user.id, user.role);
     const refreshToken = generateRefreshToken(user.id);
+    console.log('Tokens générés avec succès');
 
     // Calcul de la date d'expiration (24h)
     const expiresAt = new Date();
     expiresAt.setHours(expiresAt.getHours() + 24);
 
     // Sauvegarde de la session en base de données
-    await db.execute(
-      'INSERT INTO sessions (user_id, token, refresh_token, expires_at) VALUES (?, ?, ?, ?)',
-      [user.id, token, refreshToken, expiresAt]
-    );
+    console.log('Sauvegarde de la session en base de données');
+    try {
+      await db.execute(
+        'INSERT INTO sessions (user_id, token, refresh_token, expires_at) VALUES (?, ?, ?, ?)',
+        [user.id, token, refreshToken, expiresAt]
+      );
+      console.log('Session sauvegardée avec succès');
+    } catch (dbError) {
+      console.error('Erreur lors de la sauvegarde de la session:', dbError);
+      throw dbError;
+    }
 
     // Réponse avec les informations utilisateur et tokens
-    return res.status(200).json({
+    const responseData = {
       token: token,
       // refreshToken: refreshToken,
       user: {
@@ -93,11 +107,33 @@ const login = async (req, res) => {
         role: user.role
       },
       // isNewUser: isNewUser
+    };
+    
+    console.log('Réponse de connexion préparée:', {
+      userId: user.id,
+      phoneNumber: user.phone_number,
+      role: user.role,
+      isNewUser: isNewUser
     });
+    
+    return res.status(200).json(responseData);
 
   } catch (error) {
+    console.error('=== ERREUR LORS DU LOGIN ===');
+    console.error('Erreur détaillée:', error);
+    console.error('Stack trace:', error.stack);
     logger.error('Erreur lors du login:', error);
-    return res.status(500).json({ error: 'Erreur serveur lors de la connexion' });
+    
+    // Log plus détaillé pour les erreurs de base de données
+    if (error.sql) {
+      console.error('Erreur SQL:', error.sql);
+      console.error('Paramètres SQL:', error.parameters);
+    }
+    
+    return res.status(500).json({ 
+      error: 'Erreur serveur lors de la connexion',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 };
 

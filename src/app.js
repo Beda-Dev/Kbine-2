@@ -36,6 +36,7 @@ const userRoutes = require('./routes/usersRoutes');
 const operatorRoutes = require('./routes/operatorRoutes');
 const orderRoutes = require('./routes/orderRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
+const planRoutes = require('./routes/planRoutes');
 
 
 // TODO pour le developpeur junior: Creer les autres fichiers de routes
@@ -71,6 +72,36 @@ const io = new Server(server, {
 app.use(helmet()); // Securise les headers HTTP
 app.use(compression()); // Compresse les reponses pour reduire la bande passante
 app.use(cors()); // Autorise les requetes cross-origin
+
+// Middleware de logging des requêtes entrantes
+app.use((req, res, next) => {
+  const start = Date.now();
+  const { method, originalUrl, ip, headers } = req;
+  
+  logger.info(`[HTTP] ${method} ${originalUrl}`, {
+    ip,
+    userAgent: headers['user-agent'],
+    contentType: headers['content-type'],
+    contentLength: headers['content-length'] || '0',
+    authorization: headers['authorization'] ? '***' : 'none'
+  });
+
+  // Capture la méthode d'envoi de la réponse pour logger la durée
+  const originalSend = res.send;
+  res.send = function(body) {
+    const duration = Date.now() - start;
+    logger.info(`[HTTP] ${method} ${originalUrl} - ${res.statusCode} (${duration}ms)`, {
+      status: res.statusCode,
+      duration: `${duration}ms`,
+      contentLength: res.get('Content-Length') || '0',
+      contentType: res.get('Content-Type')
+    });
+    return originalSend.call(this, body);
+  };
+
+  next();
+});
+
 app.use(express.json({ limit: '10mb' })); // Parse les body JSON (limite 10MB)
 app.use(express.urlencoded({ extended: true })); // Parse les formulaires
 app.use(rateLimiter); // Limite le nombre de requetes par IP
@@ -127,6 +158,7 @@ app.set('io', io);
 // ===============================
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/plans', planRoutes);
 app.use('/api/operators', operatorRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/payments', paymentRoutes);
@@ -158,7 +190,18 @@ app.use(errorHandler);
 // Route catch-all pour les endpoints non trouves
 // Doit etre la DERNIERE route definie
 app.use('*', (req, res) => {
-  res.status(404).json({ error: 'Route non trouvee' });
+  logger.warn(`[404] Route non trouvée: ${req.originalUrl}`, {
+    method: req.method,
+    ip: req.ip,
+    headers: req.headers
+  });
+  
+  res.status(404).json({ 
+    error: 'Route non trouvée',
+    path: req.originalUrl,
+    method: req.method,
+    timestamp: new Date().toISOString()
+  });
 });
 
 // ===============================
@@ -170,7 +213,34 @@ const PORT = process.env.PORT || 3000;
 
 // Demarrage du serveur
 server.listen(PORT, () => {
-  logger.info(`Serveur Kbine demarre sur le port ${PORT}`);
+  const env = process.env.NODE_ENV || 'development';
+  const memoryUsage = process.memoryUsage();
+  
+  logger.info('======================================');
+  logger.info(`🚀 Serveur Kbine démarré avec succès`);
+  logger.info(`   - Port: ${PORT}`);
+  logger.info(`   - Environnement: ${env}`);
+  logger.info(`   - PID: ${process.pid}`);
+  logger.info(`   - Mémoire: ${Math.round(memoryUsage.heapUsed / 1024 / 1024)}MB / ${Math.round(memoryUsage.heapTotal / 1024 / 1024)}MB`);
+  logger.info('======================================');
+  
+  // Log des routes disponibles
+  const routes = [];
+  app._router.stack.forEach((middleware) => {
+    if (middleware.route) {
+      // Routes directes
+      routes.push(`${Object.keys(middleware.route.methods).join(', ').toUpperCase()} ${middleware.route.path}`);
+    } else if (middleware.name === 'router') {
+      // Routes montées avec app.use()
+      middleware.handle.stack.forEach((handler) => {
+        if (handler.route) {
+          routes.push(`${Object.keys(handler.route.methods).join(', ').toUpperCase()} ${handler.route.path}`);
+        }
+      });
+    }
+  });
+  
+  logger.debug('Routes disponibles:', { routes });
 });
 
 // Export de l'app pour les tests

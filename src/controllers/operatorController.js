@@ -1,31 +1,63 @@
+// ==========================================
+// FILE: operatorController.js
+// ==========================================
 const operatorsService = require('../services/operatorsService');
-const { authenticateToken, requireRole } = require('../middlewares/auth');
 const logger = require('../utils/logger');
-const { 
-    createOperatorValidation, 
-    updateOperatorValidation, 
-    operatorIdValidation 
-} = require('../validators/operatorValidation');
 
 /**
  * Récupère tous les opérateurs
  * @route GET /api/operators
  */
-const getAllOperators = async (req, res) => {
+const getAllOperators = async (req, res, next) => {
     try {
+        logger.debug('[OperatorController] [getAllOperators] Récupération des opérateurs');
+        
         const operators = await operatorsService.findAll();
+        
         res.json({
             success: true,
+            count: operators.length,
             data: operators
         });
     } catch (error) {
-        console.error('Erreur getAllOperators:', error);
-        logger.error('Erreur getAllOperators:', error);
-        res.status(500).json({ 
-            success: false,
-            error: 'Erreur lors de la récupération des opérateurs',
-            details: error.message 
+        logger.error('[OperatorController] [getAllOperators] Erreur', {
+            error: error.message
         });
+        next(error);
+    }
+};
+
+/**
+ * Récupère un opérateur par son ID
+ * @route GET /api/operators/:id
+ */
+const getOperatorById = async (req, res, next) => {
+    try {
+        const operatorId = parseInt(req.params.id);
+        
+        logger.debug('[OperatorController] [getOperatorById] Récupération', {
+            operatorId
+        });
+        
+        const operator = await operatorsService.findById(operatorId);
+        
+        if (!operator) {
+            return res.status(404).json({
+                success: false,
+                error: 'Opérateur non trouvé'
+            });
+        }
+        
+        res.json({
+            success: true,
+            data: operator
+        });
+    } catch (error) {
+        logger.error('[OperatorController] [getOperatorById] Erreur', {
+            error: error.message,
+            operatorId: req.params.id
+        });
+        next(error);
     }
 };
 
@@ -34,20 +66,18 @@ const getAllOperators = async (req, res) => {
  * @route POST /api/operators
  * @requires admin ou staff
  */
-const createOperator = async (req, res) => {
+const createOperator = async (req, res, next) => {
     try {
-        // Validation des données d'entrée
-        const { error, value: validatedData } = createOperatorValidation(req.body);
-        if (error) {
-            return res.status(400).json({
-                success: false,
-                error: 'Données invalides',
-                details: error.details.map(d => d.message)
-            });
-        }
-
+        // Utiliser les données validées par le middleware
+        const operatorData = req.validated || req.body;
+        
+        logger.info('[OperatorController] [createOperator] Création', {
+            name: operatorData.name,
+            code: operatorData.code
+        });
+        
         // Vérification de l'unicité du code
-        const existingOperator = await operatorsService.findByCode(validatedData.code);
+        const existingOperator = await operatorsService.findByCode(operatorData.code);
         if (existingOperator) {
             return res.status(409).json({
                 success: false,
@@ -56,7 +86,7 @@ const createOperator = async (req, res) => {
         }
 
         // Création de l'opérateur
-        const operator = await operatorsService.create(validatedData);
+        const operator = await operatorsService.create(operatorData);
 
         res.status(201).json({
             success: true,
@@ -64,13 +94,10 @@ const createOperator = async (req, res) => {
             data: operator
         });
     } catch (error) {
-        console.error('Erreur createOperator:', error);
-        logger.error('Erreur createOperator:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erreur lors de la création de l\'opérateur',
-            details: error.message
+        logger.error('[OperatorController] [createOperator] Erreur', {
+            error: error.message
         });
+        next(error);
     }
 };
 
@@ -79,32 +106,19 @@ const createOperator = async (req, res) => {
  * @route PUT /api/operators/:id
  * @requires admin ou staff
  */
-const updateOperator = async (req, res) => {
+const updateOperator = async (req, res, next) => {
     try {
-        const { id } = req.params;
-
-        // Validation de l'ID
-        const idValidation = operatorIdValidation(parseInt(id));
-        if (idValidation.error) {
-            return res.status(400).json({
-                success: false,
-                error: 'ID invalide',
-                details: idValidation.error.details.map(d => d.message)
-            });
-        }
-
-        // Validation des données de mise à jour
-        const { error, value: validatedData } = updateOperatorValidation(req.body);
-        if (error) {
-            return res.status(400).json({
-                success: false,
-                error: 'Données de mise à jour invalides',
-                details: error.details.map(d => d.message)
-            });
-        }
+        const operatorId = parseInt(req.params.id);
+        // Utiliser les données validées par le middleware
+        const updateData = req.validated || req.body;
+        
+        logger.info('[OperatorController] [updateOperator] Mise à jour', {
+            operatorId,
+            fields: Object.keys(updateData)
+        });
 
         // Vérification de l'existence de l'opérateur
-        const existingOperator = await operatorsService.findById(id);
+        const existingOperator = await operatorsService.findById(operatorId);
         if (!existingOperator) {
             return res.status(404).json({
                 success: false,
@@ -113,8 +127,8 @@ const updateOperator = async (req, res) => {
         }
 
         // Vérification de l'unicité du code si modifié
-        if (validatedData.code && validatedData.code !== existingOperator.code) {
-            const operatorWithSameCode = await operatorsService.findByCode(validatedData.code);
+        if (updateData.code && updateData.code !== existingOperator.code) {
+            const operatorWithSameCode = await operatorsService.findByCode(updateData.code);
             if (operatorWithSameCode) {
                 return res.status(409).json({
                     success: false,
@@ -124,20 +138,19 @@ const updateOperator = async (req, res) => {
         }
 
         // Mise à jour de l'opérateur
-        const updatedOperator = await operatorsService.update(id, validatedData);
+        const updatedOperator = await operatorsService.update(operatorId, updateData);
 
-        res.status(200).json({
+        res.json({
             success: true,
             message: 'Opérateur mis à jour avec succès',
             data: updatedOperator
         });
     } catch (error) {
-        console.error('Erreur updateOperator:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erreur lors de la mise à jour de l\'opérateur',
-            details: error.message
+        logger.error('[OperatorController] [updateOperator] Erreur', {
+            error: error.message,
+            operatorId: req.params.id
         });
+        next(error);
     }
 };
 
@@ -146,22 +159,16 @@ const updateOperator = async (req, res) => {
  * @route DELETE /api/operators/:id
  * @requires admin ou staff
  */
-const deleteOperator = async (req, res) => {
+const deleteOperator = async (req, res, next) => {
     try {
-        const { id } = req.params;
-
-        // Validation de l'ID
-        const idValidation = operatorIdValidation(parseInt(id));
-        if (idValidation.error) {
-            return res.status(400).json({
-                success: false,
-                error: 'ID invalide',
-                details: idValidation.error.details.map(d => d.message)
-            });
-        }
+        const operatorId = parseInt(req.params.id);
+        
+        logger.info('[OperatorController] [deleteOperator] Suppression', {
+            operatorId
+        });
 
         // Vérification de l'existence de l'opérateur
-        const operator = await operatorsService.findById(id);
+        const operator = await operatorsService.findById(operatorId);
         if (!operator) {
             return res.status(404).json({
                 success: false,
@@ -170,15 +177,15 @@ const deleteOperator = async (req, res) => {
         }
 
         // Suppression de l'opérateur
-        await operatorsService.deleteById(id);
+        await operatorsService.deleteById(operatorId);
 
-        res.status(200).json({
-            success: true,
-            message: 'Opérateur supprimé avec succès',
-            data: { id }
-        });
+        // 204 No Content ne doit pas avoir de body
+        res.status(204).send();
     } catch (error) {
-        console.error('Erreur deleteOperator:', error);
+        logger.error('[OperatorController] [deleteOperator] Erreur', {
+            error: error.message,
+            operatorId: req.params.id
+        });
         
         if (error.message.includes('impossible de supprimer')) {
             return res.status(400).json({
@@ -188,16 +195,13 @@ const deleteOperator = async (req, res) => {
             });
         }
         
-        res.status(500).json({
-            success: false,
-            error: 'Erreur lors de la suppression de l\'opérateur',
-            details: error.message
-        });
+        next(error);
     }
 };
 
 module.exports = {
     getAllOperators,
+    getOperatorById,
     createOperator,
     updateOperator,
     deleteOperator

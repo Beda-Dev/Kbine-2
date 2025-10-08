@@ -8,42 +8,59 @@ const db = require('../config/database');
 // Fonction pour récupérer les préfixes depuis la base de données
 async function getOperatorPrefixes() {
   try {
-    const operators = await db.query('SELECT prefixes FROM operators');
+    // Utilisation de execute au lieu de query pour une meilleure gestion des résultats
+    const [rows] = await db.execute('SELECT prefixes FROM operators');
     const prefixes = [];
     
-    // Vérifier si operators est un tableau
-    if (!Array.isArray(operators)) {
-      console.error('Erreur: les opérateurs ne sont pas un tableau:', operators);
+    // Vérifier si rows est un tableau
+    if (!Array.isArray(rows)) {
+      console.error('Erreur: les opérateurs ne sont pas un tableau:', rows);
       return [];
     }
     
     // Extraire tous les préfixes uniques
-    operators.forEach(operator => {
+    rows.forEach(operator => {
       try {
         let opPrefixes;
         
         // CORRECTION: Gestion robuste du parsing JSON
-        if (typeof operator.prefixes === 'string') {
+        let prefixesValue = operator.prefixes;
+        
+        // Si c'est un Buffer (cas où le champ JSON est stocké comme BLOB)
+        if (Buffer.isBuffer(prefixesValue)) {
+          prefixesValue = prefixesValue.toString('utf8');
+        }
+        
+        if (typeof prefixesValue === 'string') {
           // Si c'est une chaîne, tenter de la parser
-          if (operator.prefixes.startsWith('[')) {
-            // C'est un tableau JSON
-            opPrefixes = JSON.parse(operator.prefixes);
-          } else if (operator.prefixes.includes(',')) {
-            // C'est une liste séparée par virgules
-            opPrefixes = operator.prefixes.split(',').map(p => p.trim());
-          } else {
-            // C'est un seul préfixe
-            opPrefixes = [operator.prefixes.trim()];
+          try {
+            if (prefixesValue.trim().startsWith('[') || prefixesValue.trim().startsWith('"')) {
+              // C'est un tableau JSON ou une chaîne JSON
+              opPrefixes = JSON.parse(prefixesValue);
+              // Si c'était une chaîne entre guillemets, on la met dans un tableau
+              if (typeof opPrefixes === 'string') {
+                opPrefixes = [opPrefixes];
+              }
+            } else if (prefixesValue.includes(',')) {
+              // C'est une liste séparée par des virgules
+              opPrefixes = prefixesValue.split(',').map(p => p.trim().replace(/["\[\]]/g, ''));
+            } else {
+              // C'est un seul préfixe
+              opPrefixes = [prefixesValue.trim().replace(/["\[\]]/g, '')];
+            }
+          } catch (e) {
+            console.error('Erreur lors du parsing JSON:', e);
+            opPrefixes = [];
           }
-        } else if (Array.isArray(operator.prefixes)) {
+        } else if (Array.isArray(prefixesValue)) {
           // C'est déjà un tableau
-          opPrefixes = operator.prefixes;
-        } else if (typeof operator.prefixes === 'number') {
+          opPrefixes = prefixesValue;
+        } else if (typeof prefixesValue === 'number') {
           // C'est un nombre
-          opPrefixes = [String(operator.prefixes).padStart(2, '0')];
+          opPrefixes = [String(prefixesValue).padStart(2, '0')];
         } else {
           // Type inattendu, on ignore
-          console.warn('Type de préfixe inattendu:', typeof operator.prefixes);
+          console.warn('Type de préfixe inattendu:', typeof prefixesValue, prefixesValue);
           return;
         }
         
@@ -87,15 +104,20 @@ function createPhonePattern(prefixes) {
 const login = async (req, res, next) => {
   try {
     // Récupérer les préfixes depuis la base de données
+    console.log('Début de la validation de connexion');
     const prefixes = await getOperatorPrefixes();
+    console.log('Préfixes après appel à getOperatorPrefixes:', prefixes);
     if (!prefixes || prefixes.length === 0) {
+      console.error('Aucun préfixe valide trouvé, utilisation des valeurs par défaut');
       return res.status(500).json({
         error: 'Erreur serveur',
         details: 'Impossible de récupérer les préfixes des opérateurs'
       });
     }
 
+    console.log('Préfixes récupérés:', prefixes);
     const phonePattern = createPhonePattern(prefixes);
+    console.log('Pattern de téléphone généré:', phonePattern);
     
     const schema = Joi.object({
       phoneNumber: Joi.string()
@@ -108,9 +130,12 @@ const login = async (req, res, next) => {
         })
     });
 
-    const { error } = schema.validate(req.body);
+    console.log('Corps de la requête reçu:', req.body);
+    const { error, value } = schema.validate(req.body, { abortEarly: false });
+    console.log('Résultat de la validation:', { error, value });
     
     if (error) {
+      console.error('Erreur de validation:', error.details);
       return res.status(400).json({
         error: 'Donnees invalides',
         details: error.details[0].message

@@ -1,67 +1,51 @@
 const Joi = require('joi');
-const { getOperatorByPhoneNumber } = require('../utils/operatorUtils');
+const logger = require('../utils/logger');
 
-// Schéma de base pour le numéro de téléphone
-const basePhoneNumberSchema = Joi.string()
-    .pattern(/^(\+?225)?[0-9]{8,10}$/)
+/**
+ * CORRECTION: Simplification du validateur pour éviter les problèmes avec la validation asynchrone
+ * La validation du préfixe opérateur sera effectuée côté contrôleur si nécessaire
+ */
+
+// Schéma de validation pour le numéro de téléphone (format de base)
+const phoneNumberSchema = Joi.string()
+    .pattern(/^(\+?225)?0[0-9]{9}$/)
+    .required()
     .messages({
-        'string.pattern.base': 'Le numéro de téléphone doit être un numéro ivoirien valide (8 à 10 chiffres, avec ou sans l\'indicatif 225)'
+        'string.empty': 'Le numéro de téléphone ne peut pas être vide',
+        'string.pattern.base': 'Le numéro de téléphone doit être un numéro ivoirien valide (10 chiffres commençant par 0, avec ou sans +225)',
+        'any.required': 'Le numéro de téléphone est obligatoire'
     });
 
 // Schéma de validation pour les rôles
 const roleSchema = Joi.string()
     .valid('client', 'staff', 'admin')
+    .required()
     .messages({
-        'any.only': 'Le rôle doit être l\'un des suivants : client, staff, admin'
-    });
-
-// Fonction de validation personnalisée pour vérifier le préfixe
-const validatePhoneNumberWithPrefix = async (value, helpers) => {
-    try {
-        const operator = await getOperatorByPhoneNumber(value);
-        if (!operator) {
-            return helpers.error('any.invalid');
-        }
-        return value;
-    } catch (error) {
-        console.error('Erreur lors de la validation du numéro de téléphone:', error);
-        return helpers.error('any.invalid');
-    }
-};
-
-// Schéma de validation pour le numéro de téléphone avec vérification du préfixe
-const phoneNumberSchema = basePhoneNumberSchema.custom(validatePhoneNumberWithPrefix, 'Validation du préfixe opérateur')
-    .messages({
-        'any.invalid': 'Le numéro de téléphone doit commencer par un préfixe d\'opérateur valide en Côte d\'Ivoire'
+        'any.only': 'Le rôle doit être l\'un des suivants : client, staff, admin',
+        'any.required': 'Le rôle est obligatoire',
+        'string.empty': 'Le rôle ne peut pas être vide'
     });
 
 // Validateur principal pour la création d'utilisateur
 const userValidator = Joi.object({
-    phone_number: phoneNumberSchema
-        .required()
-        .messages({
-            'any.required': 'Le numéro de téléphone est obligatoire',
-            'string.empty': 'Le numéro de téléphone ne peut pas être vide',
-            'string.pattern.base': 'Le numéro de téléphone doit être un numéro ivoirien valide (8 à 10 chiffres, avec ou sans l\'indicatif 225)'
-        }),
+    phone_number: phoneNumberSchema,
     role: roleSchema
-        .required()
-        .messages({
-            'any.required': 'Le rôle est obligatoire',
-            'string.empty': 'Le rôle ne peut pas être vide'
-        })
 }).messages({
     'object.unknown': 'Champ non autorisé détecté'
 });
 
 // Validateur pour la mise à jour d'utilisateur
 const userUpdateValidator = Joi.object({
-    phone_number: phoneNumberSchema
+    phone_number: Joi.string()
+        .pattern(/^(\+?225)?0[0-9]{9}$/)
         .messages({
-            'string.empty': 'Le numéro de téléphone ne peut pas être vide'
+            'string.empty': 'Le numéro de téléphone ne peut pas être vide',
+            'string.pattern.base': 'Le numéro de téléphone doit être un numéro ivoirien valide'
         }),
-    role: roleSchema
+    role: Joi.string()
+        .valid('client', 'staff', 'admin')
         .messages({
+            'any.only': 'Le rôle doit être l\'un des suivants : client, staff, admin',
             'string.empty': 'Le rôle ne peut pas être vide'
         })
 }).min(1).messages({
@@ -69,7 +53,50 @@ const userUpdateValidator = Joi.object({
     'object.unknown': 'Champ non autorisé détecté'
 });
 
+// Fonction de validation avec logging
+const createValidationFunction = (schema, context = '') => {
+    return async (data) => {
+        logger.debug(`[UserValidator] Début validation ${context}`, { data });
+        
+        try {
+            const result = await schema.validateAsync(data, { 
+                abortEarly: false,
+                stripUnknown: true 
+            });
+            
+            logger.debug(`[UserValidator] Validation ${context} réussie`, { 
+                validatedData: result
+            });
+            
+            return result;
+            
+        } catch (validationError) {
+            const errors = validationError.details.map(detail => ({
+                field: detail.path[0],
+                message: detail.message,
+                type: detail.type
+            }));
+            
+            logger.warn(`[UserValidator] Échec validation ${context}`, {
+                errors,
+                originalData: data
+            });
+            
+            throw validationError;
+        }
+    };
+};
+
+// Création des validateurs avec logging
+const validateUser = createValidationFunction(userValidator, 'création utilisateur');
+const validateUserUpdate = createValidationFunction(userUpdateValidator, 'mise à jour utilisateur');
+
 module.exports = {
-    userValidator,
-    userUpdateValidator
+    userValidator: validateUser,
+    userUpdateValidator: validateUserUpdate,
+    // Export des schémas bruts pour les tests
+    schemas: {
+        user: userValidator,
+        userUpdate: userUpdateValidator
+    }
 };

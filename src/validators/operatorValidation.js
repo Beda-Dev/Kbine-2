@@ -1,6 +1,9 @@
+// ==========================================
+// FILE: operatorValidation.js (CORRIGÉ)
+// ==========================================
 const Joi = require('joi');
 
-// Schéma de base pour un opérateur
+// Schéma de base pour un opérateur (création)
 const operatorSchema = Joi.object({
     name: Joi.string()
         .min(2)
@@ -52,14 +55,65 @@ const operatorSchema = Joi.object({
 
 // Validation pour la création d'un opérateur
 const createOperatorValidation = (data) => {
-    return operatorSchema.validate(data, { abortEarly: false });
+    return operatorSchema.validate(data, { 
+        abortEarly: false,
+        stripUnknown: true 
+    });
 };
 
 // Validation pour la mise à jour d'un opérateur
+// Au moins un champ doit être fourni
 const updateOperatorValidation = (data) => {
-    return operatorSchema.validate(data, { 
+    const schema = Joi.object({
+        name: Joi.string()
+            .min(2)
+            .max(50)
+            .messages({
+                'string.base': 'Le nom doit être une chaîne de caractères',
+                'string.empty': 'Le nom de l\'opérateur ne peut pas être vide',
+                'string.min': 'Le nom doit contenir au moins 2 caractères',
+                'string.max': 'Le nom ne peut pas dépasser 50 caractères'
+            }),
+
+        code: Joi.string()
+            .min(2)
+            .max(10)
+            .uppercase()
+            .messages({
+                'string.base': 'Le code doit être une chaîne de caractères',
+                'string.empty': 'Le code de l\'opérateur ne peut pas être vide',
+                'string.min': 'Le code de l\'opérateur doit contenir au moins 2 caractères',
+                'string.max': 'Le code de l\'opérateur ne peut pas dépasser 10 caractères',
+                'string.uppercase': 'Le code de l\'opérateur doit être en majuscules'
+            }),
+
+        prefixes: Joi.array()
+            .items(
+                Joi.string()
+                    .pattern(/^[0-9]{2,3}$/)
+                    .messages({
+                        'string.pattern.base': 'Chaque préfixe doit être composé de 2 ou 3 chiffres',
+                        'string.empty': 'Les préfixes ne peuvent pas être vides'
+                    })
+            )
+            .min(1)
+            .max(20)
+            .unique()
+            .messages({
+                'array.base': 'Les préfixes doivent être fournis sous forme de tableau',
+                'array.min': 'Au moins un préfixe est requis',
+                'array.max': 'Maximum 20 préfixes autorisés',
+                'array.unique': 'Les préfixes doivent être uniques'
+            })
+    })
+    .min(1) // Au moins un champ doit être fourni
+    .messages({
+        'object.min': 'Au moins un champ doit être fourni pour la mise à jour'
+    });
+    
+    return schema.validate(data, { 
         abortEarly: false,
-        allowUnknown: true // Permet des champs supplémentaires non définis dans le schéma
+        stripUnknown: true 
     });
 };
 

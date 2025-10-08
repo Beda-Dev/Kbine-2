@@ -1,5 +1,10 @@
 const Joi = require('joi');
 
+/**
+ * Schémas de validation pour les plans
+ * CORRECTION: Pattern de numéro de téléphone cohérent avec le reste de l'application
+ */
+
 // Schéma de base pour un plan
 const planSchema = Joi.object({
     operator_id: Joi.number()
@@ -14,6 +19,7 @@ const planSchema = Joi.object({
         }),
 
     name: Joi.string()
+        .trim()
         .max(100)
         .required()
         .messages({
@@ -24,6 +30,7 @@ const planSchema = Joi.object({
         }),
 
     description: Joi.string()
+        .trim()
         .max(500)
         .allow('', null)
         .optional()
@@ -34,6 +41,7 @@ const planSchema = Joi.object({
 
     price: Joi.number()
         .positive()
+        .precision(2)
         .required()
         .messages({
             'number.base': 'Le prix doit être un nombre',
@@ -53,6 +61,7 @@ const planSchema = Joi.object({
     validity_days: Joi.number()
         .integer()
         .positive()
+        .allow(null)
         .optional()
         .messages({
             'number.base': 'La validité doit être un nombre',
@@ -61,10 +70,13 @@ const planSchema = Joi.object({
         }),
 
     ussd_code: Joi.string()
+        .trim()
+        .max(20)
         .required()
         .messages({
             'string.base': 'Le code USSD doit être une chaîne de caractères',
             'string.empty': 'Le code USSD est requis',
+            'string.max': 'Le code USSD ne doit pas dépasser 20 caractères',
             'any.required': 'Le code USSD est obligatoire'
         }),
 
@@ -75,17 +87,22 @@ const planSchema = Joi.object({
         })
 });
 
-// Validation pour la création d'un plan
+/**
+ * Validation pour la création d'un plan
+ * Tous les champs requis doivent être présents
+ */
 const createPlanValidation = (data) => {
-    const schema = planSchema.keys({
-        // Vérification d'unicité du nom pourrait être ajoutée ici
-        name: planSchema.extract('name')
+    return planSchema.validate(data, { 
+        abortEarly: false,
+        stripUnknown: true 
     });
-    
-    return schema.validate(data, { abortEarly: false });
 };
 
-// Validation pour la mise à jour d'un plan
+/**
+ * Validation pour la mise à jour d'un plan
+ * Au moins un champ doit être fourni
+ * Tous les champs sont optionnels individuellement
+ */
 const updatePlanValidation = (data) => {
     const schema = Joi.object({
         operator_id: Joi.number()
@@ -96,55 +113,78 @@ const updatePlanValidation = (data) => {
                 'number.integer': 'L\'ID de l\'opérateur doit être un entier',
                 'number.positive': 'L\'ID de l\'opérateur doit être un nombre positif'
             }),
+        
         name: Joi.string()
+            .trim()
             .max(100)
             .messages({
                 'string.base': 'Le nom doit être une chaîne de caractères',
-                'string.empty': 'Le nom du plan est requis',
+                'string.empty': 'Le nom du plan ne peut pas être vide',
                 'string.max': 'Le nom ne doit pas dépasser 100 caractères'
             }),
+        
         description: Joi.string()
+            .trim()
             .max(500)
             .allow('', null)
             .messages({
                 'string.base': 'La description doit être une chaîne de caractères',
                 'string.max': 'La description ne doit pas dépasser 500 caractères'
             }),
+        
         price: Joi.number()
             .positive()
+            .precision(2)
             .messages({
                 'number.base': 'Le prix doit être un nombre',
                 'number.positive': 'Le prix doit être un nombre positif'
             }),
+        
         type: Joi.string()
             .valid('credit', 'minutes', 'internet')
             .messages({
                 'string.base': 'Le type doit être une chaîne de caractères',
                 'any.only': 'Type de plan invalide. Doit être \'credit\', \'minutes\' ou \'internet\''
             }),
+        
         validity_days: Joi.number()
             .integer()
             .positive()
+            .allow(null)
             .messages({
                 'number.base': 'La validité doit être un nombre',
                 'number.integer': 'La validité doit être un nombre entier',
                 'number.positive': 'La validité doit être un nombre de jours positif'
             }),
+        
         ussd_code: Joi.string()
+            .trim()
+            .max(20)
             .messages({
                 'string.base': 'Le code USSD doit être une chaîne de caractères',
-                'string.empty': 'Le code USSD est requis'
+                'string.empty': 'Le code USSD ne peut pas être vide',
+                'string.max': 'Le code USSD ne doit pas dépasser 20 caractères'
             }),
+        
         active: Joi.boolean()
             .messages({
                 'boolean.base': 'Le statut actif doit être un booléen'
             })
-    }).min(1); // Au moins un champ doit être fourni pour la mise à jour
+    })
+    .min(1) // Au moins un champ doit être fourni
+    .messages({
+        'object.min': 'Au moins un champ doit être fourni pour la mise à jour'
+    });
     
-    return schema.validate(data, { abortEarly: false });
+    return schema.validate(data, { 
+        abortEarly: false,
+        stripUnknown: true 
+    });
 };
 
-// Validation pour la récupération des plans
+/**
+ * Validation pour les paramètres de requête (query params)
+ */
 const getPlansValidation = (query) => {
     const schema = Joi.object({
         includeInactive: Joi.boolean()
@@ -154,10 +194,12 @@ const getPlansValidation = (query) => {
             })
     });
     
-    return schema.validate(query);
+    return schema.validate(query, { stripUnknown: true });
 };
 
-// Validation pour l'ID de plan
+/**
+ * Validation pour l'ID de plan
+ */
 const planIdValidation = (id) => {
     const schema = Joi.number()
         .integer()
@@ -173,7 +215,9 @@ const planIdValidation = (id) => {
     return schema.validate(id);
 };
 
-// Validation pour l'ID d'opérateur
+/**
+ * Validation pour l'ID d'opérateur
+ */
 const operatorIdValidation = (id) => {
     const schema = Joi.number()
         .integer()
@@ -189,14 +233,19 @@ const operatorIdValidation = (id) => {
     return schema.validate(id);
 };
 
-// Validation pour le numéro de téléphone
+/**
+ * Validation pour le numéro de téléphone
+ * CORRECTION: Pattern cohérent avec le reste de l'application
+ * Format accepté: 0XXXXXXXXX (10 chiffres commençant par 0)
+ */
 const phoneNumberValidation = (phoneNumber) => {
     const schema = Joi.string()
-        .pattern(/^(01|05|07)[0-9]{8}$/)
+        .pattern(/^0[0-9]{9}$/)
         .required()
         .messages({
             'string.base': 'Le numéro de téléphone doit être une chaîne de caractères',
-            'string.pattern.base': 'Le numéro de téléphone doit être un numéro ivoirien valide (commençant par 01, 05 ou 07 suivi de 8 chiffres)',
+            'string.pattern.base': 'Le numéro de téléphone doit être un numéro ivoirien valide (10 chiffres commençant par 0)',
+            'string.empty': 'Le numéro de téléphone ne peut pas être vide',
             'any.required': 'Le numéro de téléphone est obligatoire'
         });
     

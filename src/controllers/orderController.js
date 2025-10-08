@@ -1,49 +1,28 @@
+// ==========================================
+// FILE: orderController.js (CORRIGÉ)
+// ==========================================
 const orderService = require('../services/orderService');
 const logger = require('../utils/logger');
-const { ORDER_STATUS } = require('../validators/orderValidator');
 
 /**
- * Gestion des erreurs
+ * Crée une nouvelle commande
+ * POST /api/orders
  */
-const handleError = (res, error, context) => {
-    logger.error(`Erreur lors de ${context}:`, error);
-    
-    if (error.name === 'ValidationError') {
-        return res.status(400).json({
-            success: false,
-            error: 'Erreur de validation',
-            details: error.message
-        });
-    }
-    
-    if (error.name === 'NotFoundError') {
-        return res.status(404).json({
-            success: false,
-            error: error.message || 'Ressource non trouvée'
-        });
-    }
-    
-    if (error.name === 'ForbiddenError') {
-        return res.status(403).json({
-            success: false,
-            error: error.message || 'Accès refusé'
-        });
-    }
-    
-    res.status(500).json({
-        success: false,
-        error: `Erreur serveur lors de ${context}`,
-        ...(process.env.NODE_ENV === 'development' && { details: error.message })
-    });
-};
-
-/**
- * Création d'une nouvelle commande
- */
-const createOrder = async (req, res) => {
+const createOrder = async (req, res, next) => {
     try {
         const userId = req.user.id;
-        const orderData = { ...req.body, user_id: userId };
+        const orderData = req.validated || { ...req.body, user_id: userId };
+        
+        // S'assurer que user_id est défini
+        if (!orderData.user_id) {
+            orderData.user_id = userId;
+        }
+        
+        logger.info('[OrderController] [createOrder] Création de commande', {
+            userId,
+            planId: orderData.plan_id,
+            amount: orderData.amount
+        });
         
         const order = await orderService.createOrder(orderData);
         
@@ -53,95 +32,164 @@ const createOrder = async (req, res) => {
             data: order
         });
     } catch (error) {
-        handleError(res, error, 'la création de la commande');
+        logger.error('[OrderController] [createOrder] Erreur', {
+            error: error.message,
+            userId: req.user?.id
+        });
+        next(error);
     }
 };
 
 /**
- * Récupération de toutes les commandes avec pagination et filtres
+ * Récupère toutes les commandes avec pagination et filtres
+ * GET /api/orders
  */
-const getAllOrders = async (req, res) => {
+const getAllOrders = async (req, res, next) => {
     try {
         const { page = 1, limit = 10, status, user_id } = req.query;
-        const filters = { status, user_id };
+        const filters = {};
         
-        // Si l'utilisateur n'est pas admin, il ne peut voir que ses propres commandes
+        logger.debug('[OrderController] [getAllOrders] Récupération', {
+            page,
+            limit,
+            status,
+            userId: user_id,
+            requestingUser: req.user.id
+        });
+        
+        // Si l'utilisateur est un client, il ne peut voir que ses propres commandes
         if (req.user.role === 'client') {
-            filters.user_id = req.user.id;
+            filters.userId = req.user.id;
+        } else if (user_id) {
+            filters.userId = user_id;
         }
         
-        const result = await orderService.getAllOrders({
-            page: parseInt(page, 10),
-            limit: Math.min(parseInt(limit, 10), 100),
-            filters
-        });
+        if (status) {
+            filters.status = status;
+        }
+        
+        const orders = await orderService.findAll(filters);
+        
+        // Pagination simple côté application
+        const startIndex = (page - 1) * limit;
+        const endIndex = startIndex + parseInt(limit);
+        const paginatedOrders = orders.slice(startIndex, endIndex);
         
         res.json({
             success: true,
-            message: 'Liste des commandes récupérée avec succès',
-            data: {
-                items: result.orders,
-                pagination: {
-                    total: result.total,
-                    page: parseInt(page, 10),
-                    limit: Math.min(parseInt(limit, 10), 100),
-                    totalPages: Math.ceil(result.total / Math.min(parseInt(limit, 10), 100))
-                }
+            data: paginatedOrders,
+            pagination: {
+                total: orders.length,
+                page: parseInt(page),
+                limit: parseInt(limit),
+                totalPages: Math.ceil(orders.length / limit)
             }
         });
     } catch (error) {
-        handleError(res, error, 'la récupération des commandes');
+        logger.error('[OrderController] [getAllOrders] Erreur', {
+            error: error.message
+        });
+        next(error);
     }
 };
 
 /**
- * Récupération d'une commande par son ID
+ * Récupère une commande par son ID
+ * GET /api/orders/:id
  */
-const getOrderById = async (req, res) => {
+const getOrderById = async (req, res, next) => {
     try {
-        const orderId = parseInt(req.params.id, 10);
-        const order = await orderService.getOrderById(orderId);
+        const orderId = parseInt(req.params.id);
+        
+        logger.debug('[OrderController] [getOrderById] Récupération', {
+            orderId,
+            requestingUser: req.user.id
+        });
+        
+        const order = await orderService.findById(orderId);
+        
+        if (!order) {
+            return res.status(404).json({
+                success: false,
+                error: 'Commande non trouvée'
+            });
+        }
         
         // Vérification des autorisations
         if (req.user.role === 'client' && order.user_id !== req.user.id) {
-            const error = new Error('Accès non autorisé à cette commande');
-            error.name = 'ForbiddenError';
-            throw error;
+            logger.warn('[OrderController] [getOrderById] Accès refusé', {
+                orderId,
+                orderOwner: order.user_id,
+                requestingUser: req.user.id
+            });
+            
+            return res.status(403).json({
+                success: false,
+                error: 'Accès non autorisé à cette commande'
+            });
         }
         
         res.json({
             success: true,
-            message: 'Commande récupérée avec succès',
             data: order
         });
     } catch (error) {
-        handleError(res, error, 'la récupération de la commande');
+        logger.error('[OrderController] [getOrderById] Erreur', {
+            error: error.message,
+            orderId: req.params.id
+        });
+        next(error);
     }
 };
 
 /**
- * Mise à jour d'une commande
+ * Met à jour une commande existante
+ * PUT /api/orders/:id
  */
-const updateOrder = async (req, res) => {
+const updateOrder = async (req, res, next) => {
     try {
-        const orderId = parseInt(req.params.id, 10);
-        const updateData = req.body;
+        const orderId = parseInt(req.params.id);
+        let updateData = req.validated || req.body;
+        
+        logger.info('[OrderController] [updateOrder] Mise à jour', {
+            orderId,
+            fields: Object.keys(updateData),
+            requestingUser: req.user.id
+        });
+        
+        // Vérifier que la commande existe
+        const order = await orderService.findById(orderId);
+        if (!order) {
+            return res.status(404).json({
+                success: false,
+                error: 'Commande non trouvée'
+            });
+        }
         
         // Vérification des autorisations
         if (req.user.role === 'client') {
-            const order = await orderService.getOrderById(orderId);
             if (order.user_id !== req.user.id) {
-                const error = new Error('Accès non autorisé à cette commande');
-                error.name = 'ForbiddenError';
-                throw error;
+                return res.status(403).json({
+                    success: false,
+                    error: 'Accès non autorisé à cette commande'
+                });
             }
             
             // Les clients ne peuvent mettre à jour que certains champs
             const allowedFields = ['phone_number'];
-            Object.keys(updateData).forEach(key => {
-                if (!allowedFields.includes(key)) {
-                    delete updateData[key];
+            const filteredData = {};
+            allowedFields.forEach(field => {
+                if (updateData[field] !== undefined) {
+                    filteredData[field] = updateData[field];
                 }
+            });
+            updateData = filteredData;
+        }
+        
+        if (Object.keys(updateData).length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Aucun champ valide à mettre à jour'
             });
         }
         
@@ -153,37 +201,91 @@ const updateOrder = async (req, res) => {
             data: updatedOrder
         });
     } catch (error) {
-        handleError(res, error, 'la mise à jour de la commande');
+        logger.error('[OrderController] [updateOrder] Erreur', {
+            error: error.message,
+            orderId: req.params.id
+        });
+        next(error);
     }
 };
 
 /**
- * Suppression d'une commande (admin uniquement)
+ * Supprime une commande (admin uniquement)
+ * DELETE /api/orders/:id
  */
-const deleteOrder = async (req, res) => {
+const deleteOrder = async (req, res, next) => {
     try {
-        const orderId = parseInt(req.params.id, 10);
+        const orderId = parseInt(req.params.id);
+        
+        logger.info('[OrderController] [deleteOrder] Suppression', {
+            orderId,
+            requestingUser: req.user.id
+        });
+        
+        // Vérifier que la commande existe
+        const order = await orderService.findById(orderId);
+        if (!order) {
+            return res.status(404).json({
+                success: false,
+                error: 'Commande non trouvée'
+            });
+        }
+        
         await orderService.deleteOrder(orderId);
         
-        res.json({
-            success: true,
-            message: 'Commande supprimée avec succès',
-            data: { id: orderId }
-        });
+        // 204 No Content ne doit pas avoir de body
+        res.status(204).send();
     } catch (error) {
-        handleError(res, error, 'la suppression de la commande');
+        logger.error('[OrderController] [deleteOrder] Erreur', {
+            error: error.message,
+            orderId: req.params.id
+        });
+        
+        // Gestion des erreurs de contrainte de clé étrangère
+        if (error.code === 'ER_ROW_IS_REFERENCED_2' || error.message.includes('liée à des paiements')) {
+            return res.status(409).json({
+                success: false,
+                error: 'Impossible de supprimer cette commande car elle est liée à des paiements'
+            });
+        }
+        
+        next(error);
     }
 };
 
 /**
- * Mise à jour du statut d'une commande (staff/admin)
+ * Met à jour le statut d'une commande (staff/admin)
+ * PATCH /api/orders/:id/status
  */
-const updateOrderStatus = async (req, res) => {
+const updateOrderStatus = async (req, res, next) => {
     try {
-        const orderId = parseInt(req.params.id, 10);
+        const orderId = parseInt(req.params.id);
         const { status } = req.body;
         
-        const updatedOrder = await orderService.updateOrderStatus(orderId, status, req.user);
+        logger.info('[OrderController] [updateOrderStatus] Mise à jour du statut', {
+            orderId,
+            newStatus: status,
+            requestingUser: req.user.id
+        });
+        
+        if (!status) {
+            return res.status(400).json({
+                success: false,
+                error: 'Le statut est requis'
+            });
+        }
+        
+        // Vérifier que la commande existe
+        const order = await orderService.findById(orderId);
+        if (!order) {
+            return res.status(404).json({
+                success: false,
+                error: 'Commande non trouvée'
+            });
+        }
+        
+        // Mettre à jour le statut
+        const updatedOrder = await orderService.updateOrder(orderId, { status });
         
         res.json({
             success: true,
@@ -191,19 +293,50 @@ const updateOrderStatus = async (req, res) => {
             data: updatedOrder
         });
     } catch (error) {
-        handleError(res, error, 'la mise à jour du statut de la commande');
+        logger.error('[OrderController] [updateOrderStatus] Erreur', {
+            error: error.message,
+            orderId: req.params.id
+        });
+        next(error);
     }
 };
 
 /**
- * Assignation d'une commande à un membre du staff
+ * Assigne une commande à un membre du staff (admin/staff)
+ * POST /api/orders/:id/assign
  */
-const assignOrder = async (req, res) => {
+const assignOrder = async (req, res, next) => {
     try {
-        const orderId = parseInt(req.params.id, 10);
+        const orderId = parseInt(req.params.id);
         const { assigned_to } = req.body;
         
-        const updatedOrder = await orderService.assignOrder(orderId, assigned_to, req.user);
+        logger.info('[OrderController] [assignOrder] Assignation', {
+            orderId,
+            assignedTo: assigned_to,
+            requestingUser: req.user.id
+        });
+        
+        if (!assigned_to) {
+            return res.status(400).json({
+                success: false,
+                error: "L'ID de l'assigné est requis"
+            });
+        }
+        
+        // Vérifier que la commande existe
+        const order = await orderService.findById(orderId);
+        if (!order) {
+            return res.status(404).json({
+                success: false,
+                error: 'Commande non trouvée'
+            });
+        }
+        
+        // Mettre à jour l'assignation
+        const updatedOrder = await orderService.updateOrder(orderId, { 
+            assigned_to,
+            status: 'assigned' 
+        });
         
         res.json({
             success: true,
@@ -211,7 +344,11 @@ const assignOrder = async (req, res) => {
             data: updatedOrder
         });
     } catch (error) {
-        handleError(res, error, "l'assignation de la commande");
+        logger.error('[OrderController] [assignOrder] Erreur', {
+            error: error.message,
+            orderId: req.params.id
+        });
+        next(error);
     }
 };
 
