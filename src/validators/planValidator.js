@@ -69,17 +69,6 @@ const planSchema = Joi.object({
             'number.positive': 'La validité doit être un nombre de jours positif'
         }),
 
-    ussd_code: Joi.string()
-        .trim()
-        .max(20)
-        .required()
-        .messages({
-            'string.base': 'Le code USSD doit être une chaîne de caractères',
-            'string.empty': 'Le code USSD est requis',
-            'string.max': 'Le code USSD ne doit pas dépasser 20 caractères',
-            'any.required': 'Le code USSD est obligatoire'
-        }),
-
     active: Joi.boolean()
         .default(true)
         .messages({
@@ -92,9 +81,9 @@ const planSchema = Joi.object({
  * Tous les champs requis doivent être présents
  */
 const createPlanValidation = (data) => {
-    return planSchema.validate(data, { 
+    return planSchema.validate(data, {
         abortEarly: false,
-        stripUnknown: true 
+        stripUnknown: true
     });
 };
 
@@ -113,7 +102,7 @@ const updatePlanValidation = (data) => {
                 'number.integer': 'L\'ID de l\'opérateur doit être un entier',
                 'number.positive': 'L\'ID de l\'opérateur doit être un nombre positif'
             }),
-        
+
         name: Joi.string()
             .trim()
             .max(100)
@@ -122,7 +111,7 @@ const updatePlanValidation = (data) => {
                 'string.empty': 'Le nom du plan ne peut pas être vide',
                 'string.max': 'Le nom ne doit pas dépasser 100 caractères'
             }),
-        
+
         description: Joi.string()
             .trim()
             .max(500)
@@ -131,7 +120,7 @@ const updatePlanValidation = (data) => {
                 'string.base': 'La description doit être une chaîne de caractères',
                 'string.max': 'La description ne doit pas dépasser 500 caractères'
             }),
-        
+
         price: Joi.number()
             .positive()
             .precision(2)
@@ -139,14 +128,14 @@ const updatePlanValidation = (data) => {
                 'number.base': 'Le prix doit être un nombre',
                 'number.positive': 'Le prix doit être un nombre positif'
             }),
-        
+
         type: Joi.string()
             .valid('credit', 'minutes', 'internet')
             .messages({
                 'string.base': 'Le type doit être une chaîne de caractères',
                 'any.only': 'Type de plan invalide. Doit être \'credit\', \'minutes\' ou \'internet\''
             }),
-        
+
         validity_days: Joi.number()
             .integer()
             .positive()
@@ -156,29 +145,22 @@ const updatePlanValidation = (data) => {
                 'number.integer': 'La validité doit être un nombre entier',
                 'number.positive': 'La validité doit être un nombre de jours positif'
             }),
-        
-        ussd_code: Joi.string()
-            .trim()
-            .max(20)
-            .messages({
-                'string.base': 'Le code USSD doit être une chaîne de caractères',
-                'string.empty': 'Le code USSD ne peut pas être vide',
-                'string.max': 'Le code USSD ne doit pas dépasser 20 caractères'
-            }),
-        
+
+
+
         active: Joi.boolean()
             .messages({
                 'boolean.base': 'Le statut actif doit être un booléen'
             })
     })
-    .min(1) // Au moins un champ doit être fourni
-    .messages({
-        'object.min': 'Au moins un champ doit être fourni pour la mise à jour'
-    });
-    
-    return schema.validate(data, { 
+        .min(1) // Au moins un champ doit être fourni
+        .messages({
+            'object.min': 'Au moins un champ doit être fourni pour la mise à jour'
+        });
+
+    return schema.validate(data, {
         abortEarly: false,
-        stripUnknown: true 
+        stripUnknown: true
     });
 };
 
@@ -193,7 +175,7 @@ const getPlansValidation = (query) => {
                 'boolean.base': 'Le paramètre includeInactive doit être un booléen'
             })
     });
-    
+
     return schema.validate(query, { stripUnknown: true });
 };
 
@@ -211,7 +193,7 @@ const planIdValidation = (id) => {
             'number.positive': 'L\'ID du plan doit être un nombre positif',
             'any.required': 'L\'ID du plan est obligatoire'
         });
-    
+
     return schema.validate(id);
 };
 
@@ -229,7 +211,7 @@ const operatorIdValidation = (id) => {
             'number.positive': 'L\'ID de l\'opérateur doit être un nombre positif',
             'any.required': 'L\'ID de l\'opérateur est obligatoire'
         });
-    
+
     return schema.validate(id);
 };
 
@@ -248,7 +230,7 @@ const phoneNumberValidation = (phoneNumber) => {
             'string.empty': 'Le numéro de téléphone ne peut pas être vide',
             'any.required': 'Le numéro de téléphone est obligatoire'
         });
-    
+
     return schema.validate(phoneNumber);
 };
 

@@ -26,11 +26,11 @@ router.get('/methods', (req, res) => {
 });
 
 /**
- * @route   GET /api/payments/statuses
+ * @route   GET /api/payments/status
  * @desc    Récupérer les statuts de paiement disponibles
  * @access  Public
  */
-router.get('/statuses', (req, res) => {
+router.get('/status', (req, res) => {
     res.json({
         success: true,
         data: paymentController.PAYMENT_STATUS
@@ -107,15 +107,7 @@ router.patch(
     authenticateToken, 
     requireStaffOrAdmin, 
     validateUpdatePaymentStatus,
-    (req, res, next) => {
-        // Transformer le body pour qu'il corresponde à ce qu'attend le contrôleur
-        req.body = {
-            status: req.body.status,
-            status_notes: req.body.notes
-        };
-        next();
-    },
-    paymentController.updatePayment
+    paymentController.updatePaymentStatus
 );
 
 /**
@@ -128,11 +120,6 @@ router.post(
     authenticateToken, 
     requireAdmin, 
     validateRefundPayment,
-    (req, res, next) => {
-        // Ajouter la raison du remboursement à req.body pour le contrôleur
-        req.body.reason = req.body.reason;
-        next();
-    },
     paymentController.refundPayment
 );
 

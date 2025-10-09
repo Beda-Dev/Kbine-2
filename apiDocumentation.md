@@ -430,7 +430,6 @@ Authorization: Bearer <token>
     "price": 1000.00,
     "type": "credit",
     "validity_days": null,
-    "ussd_code": "*144*1*1#",
     "active": true,
     "created_at": "2025-01-01T00:00:00.000Z"
   },
@@ -443,7 +442,6 @@ Authorization: Bearer <token>
     "price": 500.00,
     "type": "internet",
     "validity_days": 7,
-    "ussd_code": "*144*3*1#",
     "active": true,
     "created_at": "2025-01-01T00:00:00.000Z"
   }
@@ -469,7 +467,6 @@ Authorization: Bearer <token>
   "price": 1000.00,
   "type": "credit",
   "validity_days": null,
-  "ussd_code": "*144*1*1#",
   "active": true,
   "created_at": "2025-01-01T00:00:00.000Z"
 }
@@ -499,7 +496,6 @@ Authorization: Bearer <token>
   "price": 5000.00,
   "type": "credit",
   "validity_days": null,
-  "ussd_code": "*144*1*5#",
   "active": true
 }
 ```
@@ -514,7 +510,6 @@ Authorization: Bearer <token>
   "price": 5000.00,
   "type": "credit",
   "validity_days": null,
-  "ussd_code": "*144*1*5#",
   "active": true,
   "created_at": "2025-01-15T16:00:00.000Z"
 }
@@ -713,71 +708,33 @@ Authorization: Bearer <token>
 
 ---
 
-## 💳 Paiements
+# 📘 Documentation API - Gestion des Paiements
 
-### 1. Initier un Paiement
-
-**Endpoint:** `POST /payments/initiate`
-
-**Description:** Initie un paiement pour une commande.
-
-**Headers:**
-```
-Authorization: Bearer <token>
-```
-
-**Body:**
-```json
-{
-  "order_id": 125,
-  "payment_method": "wave",
-  "phone_number": "0701020304"
-}
-```
-
-**Réponse Success (200):**
-```json
-{
-  "payment_id": 87,
-  "order_id": 125,
-  "amount": 1000.00,
-  "payment_method": "wave",
-  "payment_reference": "PAY-87-1736951234",
-  "status": "pending",
-  "payment_url": "https://wave.com/pay/xyz123",
-  "created_at": "2025-01-15T16:30:00.000Z"
-}
-```
+## 📋 Table des matières
+1. [Informations générales](#informations-générales)
+2. [Authentification](#authentification)
+3. [Routes publiques](#routes-publiques)
+4. [Routes de gestion des paiements](#routes-de-gestion-des-paiements)
+5. [Codes d'erreur](#codes-derreur)
+6. [Exemples complets](#exemples-complets)
 
 ---
 
-### 2. Vérifier le Statut d'un Paiement
+## 🌐 Informations générales
 
-**Endpoint:** `GET /payments/:id/status`
+**Base URL**: `http://votre-domaine.com/api/payments`
 
-**Description:** Vérifie le statut d'un paiement.
+**Format de données**: JSON
 
-**Headers:**
-```
-Authorization: Bearer <token>
-```
+**Encodage**: UTF-8
 
-**Réponse Success (200):**
-```json
-{
-  "id": 87,
-  "order_id": 125,
-  "amount": 1000.00,
-  "payment_method": "wave",
-  "payment_reference": "PAY-87-1736951234",
-  "external_reference": "WAVE-XYZ123", 
-  "status": "success",
-  "created_at": "2025-01-15T16:30:00.000Z",
-  "updated_at": "2025-01-15T16:32:00.000Z"
-}
-```
+### Méthodes de paiement disponibles
+- `wave` - Wave CI
+- `orange_money` - Orange Money
+- `mtn_money` - MTN Mobile Money
+- `moov_money` - Moov Money
 
-**Statuts possibles:**
+### Statuts de paiement
 - `pending` - En attente
 - `success` - Réussi
 - `failed` - Échoué
@@ -785,27 +742,419 @@ Authorization: Bearer <token>
 
 ---
 
-### 3. Callback Paiement (Webhook)
+## 🔐 Authentification
 
-**Endpoint:** `POST /payments/callback/:provider`
+La plupart des routes nécessitent une authentification via un token JWT.
 
-**Description:** Endpoint de callback pour les services de paiement.
+**Header requis**:
+```
+Authorization: Bearer <votre_token_jwt>
+```
 
-**Paramètres URL:**
-- `provider`: Service de paiement (`wave`, `orange_money`, `mtn_money`, `moov_money`)
+### Niveaux d'accès
+- 🟢 **Public** : Accessible sans authentification
+- 🔵 **Client** : Authentification requise
+- 🟡 **Staff/Admin** : Rôle staff ou admin requis
+- 🔴 **Admin** : Rôle admin uniquement
 
-**Body:** (Format dépend du provider)
+---
 
-**Réponse Success (200):**
+## 📂 Routes publiques
+
+### 1. Récupérer les méthodes de paiement disponibles
+
+**GET** `/api/payments/methods`
+
+🟢 **Accès**: Public
+
+#### Réponse réussie (200)
 ```json
 {
   "success": true,
-  "message": "Paiement traité avec succès"
+  "data": [
+    "wave",
+    "orange_money",
+    "mtn_money",
+    "moov_money"
+  ]
 }
+```
+
+#### Exemple cURL
+```bash
+curl -X GET http://localhost:3000/api/payments/methods
 ```
 
 ---
 
+### 2. Récupérer les statuts de paiement disponibles
+
+**GET** `/api/payments/statuses`
+
+🟢 **Accès**: Public
+
+#### Réponse réussie (200)
+```json
+{
+  "success": true,
+  "data": [
+    "pending",
+    "success",
+    "failed",
+    "refunded"
+  ]
+}
+```
+
+#### Exemple cURL
+```bash
+curl -X GET http://localhost:3000/api/payments/statuses
+```
+
+---
+
+## 💳 Routes de gestion des paiements
+
+### 3. Créer un nouveau paiement
+
+**POST** `/api/payments`
+
+🔵 **Accès**: Client authentifié
+
+#### Corps de la requête
+```json
+{
+  "order_id": 123,
+  "amount": 5000.00,
+  "payment_method": "wave",
+  "payment_reference": "PAY-20251008-ABC123",
+  "external_reference": "WAVE-TXN-456789",
+  "callback_data": {
+    "transaction_id": "12345",
+    "customer_phone": "0789062079"
+  }
+}
+```
+
+#### Champs requis
+| Champ | Type | Description |
+|-------|------|-------------|
+| `order_id` | Integer | ID de la commande (doit exister) |
+| `amount` | Decimal | Montant du paiement (positif, max 2 décimales) |
+| `payment_method` | String | Méthode de paiement (voir liste ci-dessus) |
+| `payment_reference` | String | Référence unique du paiement |
+
+#### Champs optionnels
+| Champ | Type | Description |
+|-------|------|-------------|
+| `external_reference` | String | Référence externe (auto-généré si absent) |
+| `callback_data` | Object | Données additionnelles du callback |
+
+#### Réponse réussie (201)
+```json
+{
+  "success": true,
+  "message": "Paiement créé avec succès",
+  "data": {
+    "id": 45,
+    "order_id": 123,
+    "amount": 5000.00,
+    "payment_method": "wave",
+    "payment_reference": "PAY-20251008-ABC123",
+    "external_reference": "WAVE-TXN-456789",
+    "status": "pending",
+    "callback_data": {
+      "transaction_id": "12345",
+      "customer_phone": "0789062079"
+    },
+    "created_at": "2025-10-08T10:30:00.000Z",
+    "updated_at": "2025-10-08T10:30:00.000Z"
+  }
+}
+```
+
+#### Erreurs possibles
+- **400** : Données invalides
+- **401** : Non authentifié
+- **404** : Commande non trouvée
+- **409** : Référence de paiement déjà existante
+
+#### Exemple cURL
+```bash
+curl -X POST http://localhost:3000/api/payments \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -d '{
+    "order_id": 123,
+    "amount": 5000.00,
+    "payment_method": "wave",
+    "payment_reference": "PAY-20251008-ABC123"
+  }'
+```
+
+---
+
+### 4. Récupérer tous les paiements (avec filtres)
+
+**GET** `/api/payments`
+
+🟡 **Accès**: Staff/Admin
+
+#### Paramètres de requête (Query params)
+| Paramètre | Type | Défaut | Description |
+|-----------|------|--------|-------------|
+| `page` | Integer | 1 | Numéro de page |
+| `limit` | Integer | 10 | Nombre d'éléments par page |
+| `status` | String | - | Filtrer par statut |
+| `payment_method` | String | - | Filtrer par méthode de paiement |
+| `start_date` | Date | - | Date de début (ISO 8601) |
+| `end_date` | Date | - | Date de fin (ISO 8601) |
+
+#### Réponse réussie (200)
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 45,
+      "order_id": 123,
+      "amount": 5000.00,
+      "payment_method": "wave",
+      "payment_reference": "PAY-20251008-ABC123",
+      "external_reference": "WAVE-TXN-456789",
+      "status": "success",
+      "callback_data": {
+        "transaction_id": "12345",
+        "notes": "Paiement validé"
+      },
+      "phone_number": "0789062079",
+      "order_amount": 5000.00,
+      "created_at": "2025-10-08T10:30:00.000Z",
+      "updated_at": "2025-10-08T10:35:00.000Z"
+    }
+  ],
+  "pagination": {
+    "total": 156,
+    "total_pages": 16,
+    "current_page": 1,
+    "per_page": 10,
+    "has_next_page": true,
+    "has_previous_page": false
+  }
+}
+```
+
+#### Exemples cURL
+
+**Sans filtre**:
+```bash
+curl -X GET http://localhost:3000/api/payments \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+**Avec filtres**:
+```bash
+curl -X GET "http://localhost:3000/api/payments?page=2&limit=20&status=success&payment_method=wave" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+**Avec plage de dates**:
+```bash
+curl -X GET "http://localhost:3000/api/payments?start_date=2025-10-01&end_date=2025-10-08" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+---
+
+### 5. Récupérer un paiement par son ID
+
+**GET** `/api/payments/:id`
+
+🔵 **Accès**: Client authentifié (propriétaire ou admin)
+
+#### Paramètres d'URL
+- `id` : ID du paiement
+
+#### Réponse réussie (200)
+```json
+{
+  "success": true,
+  "data": {
+    "id": 45,
+    "order_id": 123,
+    "amount": 5000.00,
+    "payment_method": "wave",
+    "payment_reference": "PAY-20251008-ABC123",
+    "external_reference": "WAVE-TXN-456789",
+    "status": "success",
+    "callback_data": {
+      "transaction_id": "12345",
+      "notes": "Paiement validé"
+    },
+    "phone_number": "0789062079",
+    "order_amount": 5000.00,
+    "created_at": "2025-10-08T10:30:00.000Z",
+    "updated_at": "2025-10-08T10:35:00.000Z"
+  }
+}
+```
+
+#### Erreurs possibles
+- **401** : Non authentifié
+- **403** : Non autorisé à voir ce paiement
+- **404** : Paiement non trouvé
+
+#### Exemple cURL
+```bash
+curl -X GET http://localhost:3000/api/payments/45 \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+---
+
+### 6. Mettre à jour un paiement
+
+**PUT** `/api/payments/:id`
+
+🔴 **Accès**: Admin uniquement
+
+#### Paramètres d'URL
+- `id` : ID du paiement
+
+#### Corps de la requête
+```json
+{
+  "amount": 5500.00,
+  "status": "success",
+  "callback_data": {
+    "transaction_id": "12345",
+    "validation_code": "OK-123"
+  }
+}
+```
+
+#### Champs modifiables
+| Champ | Type | Description |
+|-------|------|-------------|
+| `amount` | Decimal | Nouveau montant |
+| `status` | String | Nouveau statut |
+| `callback_data` | Object | Nouvelles données callback |
+
+⚠️ **Note**: Au moins un champ doit être fourni
+
+#### Réponse réussie (200)
+```json
+{
+  "success": true,
+  "message": "Paiement mis à jour avec succès",
+  "data": {
+    "id": 45,
+    "order_id": 123,
+    "amount": 5500.00,
+    "payment_method": "wave",
+    "payment_reference": "PAY-20251008-ABC123",
+    "status": "success",
+    "callback_data": {
+      "transaction_id": "12345",
+      "validation_code": "OK-123"
+    },
+    "created_at": "2025-10-08T10:30:00.000Z",
+    "updated_at": "2025-10-08T11:00:00.000Z"
+  }
+}
+```
+
+#### Erreurs possibles
+- **400** : Données invalides
+- **401** : Non authentifié
+- **403** : Accès non autorisé (non admin)
+- **404** : Paiement non trouvé
+
+#### Exemple cURL
+```bash
+curl -X PUT http://localhost:3000/api/payments/45 \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -d '{
+    "status": "success",
+    "callback_data": {
+      "validation_code": "OK-123"
+    }
+  }'
+```
+
+---
+
+### 7. Mettre à jour le statut d'un paiement
+
+**PATCH** `/api/payments/:id/status`
+
+🟡 **Accès**: Staff/Admin
+
+#### Paramètres d'URL
+- `id` : ID du paiement
+
+#### Corps de la requête
+```json
+{
+  "status": "success",
+  "notes": "Paiement vérifié et validé manuellement"
+}
+```
+
+#### Champs requis
+| Champ | Type | Description |
+|-------|------|-------------|
+| `status` | String | Nouveau statut (pending, success, failed, refunded) |
+
+#### Champs optionnels
+| Champ | Type | Description |
+|-------|------|-------------|
+| `notes` | String | Notes explicatives sur le changement de statut |
+
+#### Réponse réussie (200)
+```json
+{
+  "success": true,
+  "message": "Statut du paiement mis à jour avec succès",
+  "data": {
+    "id": 45,
+    "order_id": 123,
+    "amount": 5000.00,
+    "payment_method": "wave",
+    "status": "success",
+    "callback_data": {
+      "notes": "Paiement vérifié et validé manuellement",
+      "last_update": "2025-10-08T11:15:00.000Z"
+    },
+    "created_at": "2025-10-08T10:30:00.000Z",
+    "updated_at": "2025-10-08T11:15:00.000Z"
+  }
+}
+```
+
+#### Erreurs possibles
+- **400** : Statut invalide
+- **401** : Non authentifié
+- **403** : Accès non autorisé
+- **404** : Paiement non trouvé
+
+#### Exemple cURL
+```bash
+curl -X PATCH http://localhost:3000/api/payments/45/status \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -d '{
+    "status": "success",
+    "notes": "Paiement vérifié manuellement"
+  }'
+```
+
+---
+
+### 8. Supprimer un paiement (Soft delete)
+
+**DELETE
 ## ⚠️ Codes d'Erreur
 
 | Code | Signification | Description |

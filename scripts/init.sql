@@ -34,7 +34,6 @@ CREATE TABLE IF NOT EXISTS plans (
     price DECIMAL(10,2) NOT NULL,
     type ENUM('credit', 'minutes', 'internet') NOT NULL,
     validity_days INT DEFAULT NULL,
-    ussd_code VARCHAR(20) NOT NULL,
     active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (operator_id) REFERENCES operators(id)
@@ -93,6 +92,7 @@ INSERT IGNORE INTO operators (name, code, prefixes) VALUES
 -- Creation des utilisateurs admin par defaut
 INSERT IGNORE INTO users (phone_number, role) VALUES
 ('0789062079', 'admin'),
+('0566955943', 'admin'),
 ('0566955943', 'admin');
 
 -- Message de succes

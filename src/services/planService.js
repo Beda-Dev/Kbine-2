@@ -25,7 +25,7 @@ const create = async (planData) => {
         });
         
         // Validation des champs requis
-        const requiredFields = ['operator_id', 'name', 'price', 'type', 'ussd_code'];
+        const requiredFields = ['operator_id', 'name', 'price', 'type'];
         const missingFields = requiredFields.filter(field => !(field in planData));
         
         if (missingFields.length > 0) {
@@ -49,8 +49,8 @@ const create = async (planData) => {
         // Insertion du plan
         const [result] = await db.execute(
             `INSERT INTO plans 
-            (operator_id, name, description, price, type, validity_days, ussd_code, active) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            (operator_id, name, description, price, type, validity_days, active) 
+            VALUES (?, ?, ?, ?, ?, ?, ?)`,
             [
                 planData.operator_id, 
                 planData.name, 
@@ -58,7 +58,6 @@ const create = async (planData) => {
                 planData.price, 
                 planData.type, 
                 planData.validity_days || null, 
-                planData.ussd_code, 
                 planData.active !== undefined ? planData.active : true
             ]
         );
@@ -296,11 +295,6 @@ const update = async (planId, planData) => {
         if (planData.validity_days !== undefined) {
             updates.push('validity_days = ?');
             params.push(planData.validity_days);
-        }
-        
-        if (planData.ussd_code !== undefined) {
-            updates.push('ussd_code = ?');
-            params.push(planData.ussd_code);
         }
         
         if (planData.active !== undefined) {

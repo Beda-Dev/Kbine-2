@@ -54,11 +54,25 @@ const createPayment = async (paymentData) => {
             throw new Error('Une transaction avec cette référence existe déjà');
         }
         
+        // Vérifier si la commande existe
+        const [order] = await connection.query(
+            'SELECT id FROM orders WHERE id = ?',
+            [paymentData.order_id]
+        );
+        
+        if (!order || order.length === 0) {
+            throw new Error('Commande non trouvée');
+        }
+        
         // Création du paiement
         const payment = {
-            ...paymentData,
-            status: 'pending',
+            order_id: paymentData.order_id,
+            amount: paymentData.amount,
+            payment_method: paymentData.payment_method,
+            payment_reference: paymentData.payment_reference,
             external_reference: paymentData.external_reference || Date.now().toString(),
+            status: 'pending',
+            callback_data: paymentData.callback_data ? JSON.stringify(paymentData.callback_data) : null,
             created_at: new Date(),
             updated_at: new Date()
         };
@@ -71,7 +85,8 @@ const createPayment = async (paymentData) => {
         
         return {
             id: result.insertId,
-            ...payment
+            ...payment,
+            callback_data: payment.callback_data ? JSON.parse(payment.callback_data) : null
         };
     } catch (error) {
         await connection.rollback();
@@ -95,38 +110,74 @@ const updatePayment = async (id, updateData) => {
         await connection.beginTransaction();
 
         // Vérifier que le paiement existe
-        const [payment] = await connection.query('SELECT * FROM payments WHERE id = ?', [id]);
+        const [payments] = await connection.query('SELECT * FROM payments WHERE id = ?', [id]);
         
-        if (!payment || payment.length === 0) {
+        if (!payments || payments.length === 0) {
             throw new Error('Paiement non trouvé');
         }
         
-        // Mise à jour du paiement
-        const updatedPayment = {
-            ...payment[0],
+        const payment = payments[0];
+        
+        // Préparer les données de mise à jour
+        const fieldsToUpdate = {
             ...updateData,
             updated_at: new Date()
         };
         
-        await connection.query('UPDATE payments SET ? WHERE id = ?', [updatedPayment, id]);
-        
-        // Si le statut est mis à jour, enregistrer l'historique
-        if (updateData.status && updateData.status !== payment[0].status) {
-            // Note: Table payment_status_history non créée dans le schéma, on skip
-            // await connection.query(
-            //     'INSERT INTO payment_status_history (payment_id, status, notes) VALUES (?, ?, ?)',
-            //     [id, updateData.status, updateData.status_notes || 'Mise à jour du statut']
-            // );
+        // Gérer callback_data si présent
+        if (fieldsToUpdate.callback_data && typeof fieldsToUpdate.callback_data === 'object') {
+            fieldsToUpdate.callback_data = JSON.stringify(fieldsToUpdate.callback_data);
         }
+        
+        // Retirer status_notes si présent (colonne n'existe pas dans la DB)
+        // On va stocker les notes dans callback_data à la place
+        if (fieldsToUpdate.status_notes) {
+            const notes = fieldsToUpdate.status_notes;
+            delete fieldsToUpdate.status_notes;
+            
+            // Ajouter les notes dans callback_data
+            let callbackData = {};
+            if (payment.callback_data) {
+                try {
+                    callbackData = JSON.parse(payment.callback_data);
+                } catch (e) {
+                    callbackData = {};
+                }
+            }
+            callbackData.notes = notes;
+            callbackData.last_update = new Date().toISOString();
+            fieldsToUpdate.callback_data = JSON.stringify(callbackData);
+        }
+        
+        // Construire la requête UPDATE dynamiquement
+        const updateFields = Object.keys(fieldsToUpdate)
+            .map(key => `${key} = ?`)
+            .join(', ');
+        const updateValues = Object.values(fieldsToUpdate);
+        
+        await connection.query(
+            `UPDATE payments SET ${updateFields} WHERE id = ?`,
+            [...updateValues, id]
+        );
         
         await connection.commit();
         
         logger.info(`Paiement mis à jour - ID: ${id}`, { paymentId: id, updates: updateData });
         
-        return {
-            id,
-            ...updatedPayment
-        };
+        // Récupérer le paiement mis à jour
+        const [updatedPayments] = await connection.query('SELECT * FROM payments WHERE id = ?', [id]);
+        const updatedPayment = updatedPayments[0];
+        
+        // Parser callback_data si présent
+        if (updatedPayment.callback_data) {
+            try {
+                updatedPayment.callback_data = JSON.parse(updatedPayment.callback_data);
+            } catch (e) {
+                // Garder comme string si le parsing échoue
+            }
+        }
+        
+        return updatedPayment;
     } catch (error) {
         await connection.rollback();
         logger.error('Erreur lors de la mise à jour du paiement', { 
@@ -152,16 +203,36 @@ const deletePayment = async (id) => {
         await connection.beginTransaction();
 
         // Vérifier que le paiement existe
-        const [payment] = await connection.query('SELECT * FROM payments WHERE id = ?', [id]);
+        const [payments] = await connection.query('SELECT * FROM payments WHERE id = ?', [id]);
         
-        if (!payment || payment.length === 0) {
+        if (!payments || payments.length === 0) {
             throw new Error('Paiement non trouvé');
         }
         
-        // Soft delete au lieu d'une suppression physique
+        const payment = payments[0];
+        
+        // Vérifier si le paiement peut être supprimé
+        if (payment.status === 'success') {
+            throw new Error('Impossible de supprimer un paiement réussi. Veuillez effectuer un remboursement.');
+        }
+        
+        // Soft delete en changeant le statut à 'failed'
+        // Stocker l'info de suppression dans callback_data
+        let callbackData = {};
+        if (payment.callback_data) {
+            try {
+                callbackData = JSON.parse(payment.callback_data);
+            } catch (e) {
+                callbackData = {};
+            }
+        }
+        callbackData.deleted = true;
+        callbackData.deleted_at = new Date().toISOString();
+        callbackData.notes = 'Paiement annulé/supprimé';
+        
         await connection.query(
-            'UPDATE payments SET status = ? WHERE id = ?',
-            ['cancelled', id]
+            'UPDATE payments SET status = ?, callback_data = ?, updated_at = ? WHERE id = ?',
+            ['failed', JSON.stringify(callbackData), new Date(), id]
         );
         
         await connection.commit();
@@ -188,7 +259,7 @@ const deletePayment = async (id) => {
  */
 const getPaymentById = async (id) => {
     try {
-        const [payment] = await db.query(
+        const [payments] = await db.query(
             'SELECT p.*, o.phone_number, o.amount as order_amount ' +
             'FROM payments p ' +
             'JOIN orders o ON p.order_id = o.id ' +
@@ -196,11 +267,22 @@ const getPaymentById = async (id) => {
             [id]
         );
         
-        if (!payment || payment.length === 0) {
+        if (!payments || payments.length === 0) {
             throw new Error('Paiement non trouvé');
         }
         
-        return payment[0];
+        const payment = payments[0];
+        
+        // Parser callback_data si présent
+        if (payment.callback_data) {
+            try {
+                payment.callback_data = JSON.parse(payment.callback_data);
+            } catch (e) {
+                // Garder comme string si le parsing échoue
+            }
+        }
+        
+        return payment;
     } catch (error) {
         logger.error('Erreur lors de la récupération du paiement', { 
             error: error.message, 
@@ -213,12 +295,6 @@ const getPaymentById = async (id) => {
 /**
  * Récupère la liste des paiements avec pagination et filtres
  * @param {Object} options - Options de pagination et de filtrage
- * @param {number} options.page - Numéro de page (défaut: 1)
- * @param {number} options.limit - Nombre d'éléments par page (défaut: 10)
- * @param {string} options.status - Filtre par statut
- * @param {string} options.payment_method - Filtre par méthode de paiement
- * @param {string} options.start_date - Date de début pour le filtre
- * @param {string} options.end_date - Date de fin pour le filtre
  * @returns {Promise<Object>} Liste paginée des paiements
  */
 const getPayments = async ({
@@ -255,8 +331,8 @@ const getPayments = async ({
         }
         
         const whereClause = whereClauses.length > 0 
-        ? `WHERE ${whereClauses.join(' AND ')}`  
-        : '';
+            ? `WHERE ${whereClauses.join(' AND ')}`  
+            : '';
         
         // Récupération des paiements
         const [payments] = await db.query(
@@ -268,6 +344,17 @@ const getPayments = async ({
              LIMIT ? OFFSET ?`,
             [...params, limit, offset]
         );
+        
+        // Parser callback_data pour chaque paiement
+        payments.forEach(payment => {
+            if (payment.callback_data) {
+                try {
+                    payment.callback_data = JSON.parse(payment.callback_data);
+                } catch (e) {
+                    // Garder comme string si le parsing échoue
+                }
+            }
+        });
         
         // Comptage total pour la pagination
         const [countResult] = await db.query(
@@ -312,11 +399,16 @@ const updatePaymentStatus = async (id, status, notes = '') => {
         throw new Error(`Statut invalide. Doit être l'un des suivants: ${PAYMENT_STATUS.join(', ')}`);
     }
     
-    return updatePayment(id, { 
-        status, 
-        status_notes: notes,
+    const updateData = { 
+        status,
         updated_at: new Date()
-    });
+    };
+    
+    if (notes) {
+        updateData.status_notes = notes;
+    }
+    
+    return updatePayment(id, updateData);
 };
 
 /**
@@ -332,36 +424,66 @@ const refundPayment = async (id, reason) => {
         await connection.beginTransaction();
         
         // Vérifier que le paiement existe et peut être remboursé
-        const [payment] = await connection.query(
-            'SELECT * FROM payments WHERE id = ? AND status = ?',
-            [id, 'success']
+        const [payments] = await connection.query(
+            'SELECT * FROM payments WHERE id = ?',
+            [id]
         );
         
-        if (!payment || payment.length === 0) {
-            throw new Error('Paiement non trouvé ou ne pouvant pas être remboursé');
+        if (!payments || payments.length === 0) {
+            throw new Error('Paiement non trouvé');
         }
         
-        // Marquer le paiement comme remboursé
-        await updatePaymentStatus(id, 'refunded', `Remboursement effectué. Raison: ${reason}`);
+        const payment = payments[0];
+        
+        if (payment.status !== 'success') {
+            throw new Error('Seuls les paiements réussis peuvent être remboursés');
+        }
+        
+        if (payment.status === 'refunded') {
+            throw new Error('Ce paiement a déjà été remboursé');
+        }
+        
+        // Préparer les données de callback avec la raison du remboursement
+        let callbackData = {};
+        if (payment.callback_data) {
+            try {
+                callbackData = JSON.parse(payment.callback_data);
+            } catch (e) {
+                callbackData = {};
+            }
+        }
+        callbackData.refund_reason = reason;
+        callbackData.refunded_at = new Date().toISOString();
+        callbackData.notes = `Remboursement effectué. Raison: ${reason}`;
+        
+        // Mettre à jour le statut du paiement
+        await connection.query(
+            'UPDATE payments SET status = ?, callback_data = ?, updated_at = ? WHERE id = ?',
+            ['refunded', JSON.stringify(callbackData), new Date(), id]
+        );
         
         // Ici, vous pourriez appeler une API de remboursement externe
-        // Par exemple: await paymentGateway.refund(payment[0].external_reference);
+        // Par exemple: await paymentGateway.refund(payment.external_reference);
         
         await connection.commit();
         
         logger.info(`Paiement remboursé - ID: ${id}`, { reason });
         
-        return getPaymentById(id);
+        // Libérer la connexion avant d'appeler getPaymentById
+        connection.release();
+        
+        // Récupérer et retourner le paiement mis à jour
+        return await getPaymentById(id);
+        
     } catch (error) {
         await connection.rollback();
+        connection.release();
         logger.error('Erreur lors du remboursement du paiement', { 
             error: error.message, 
             paymentId: id,
             reason
         });
         throw error;
-    } finally {
-        connection.release();
     }
 };
 
@@ -372,12 +494,12 @@ const refundPayment = async (id, reason) => {
  */
 const isPaymentComplete = async (orderId) => {
     try {
-        const [payment] = await db.query(
+        const [payments] = await db.query(
             'SELECT status FROM payments WHERE order_id = ? ORDER BY created_at DESC LIMIT 1',
             [orderId]
         );
         
-        return payment.length > 0 && payment[0].status === 'success';
+        return payments.length > 0 && payments[0].status === 'success';
     } catch (error) {
         logger.error('Erreur lors de la vérification du statut de paiement', { 
             error: error.message, 
