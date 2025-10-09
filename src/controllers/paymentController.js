@@ -1,6 +1,5 @@
 const logger = require('../utils/logger');
 const paymentService = require('../services/paymentService');
-const { createPaymentValidation, updatePaymentValidation } = require('../validators/paymentValidator');
 const { PAYMENT_METHODS, PAYMENT_STATUS } = paymentService;
 
 /**
@@ -10,13 +9,8 @@ const { PAYMENT_METHODS, PAYMENT_STATUS } = paymentService;
  */
 const createPayment = async (req, res, next) => {
     try {
-        // Validation des données
-        const validatedData = createPaymentValidation(req.body);
-        
-        // Vérifier si l'utilisateur est autorisé à effectuer cette action
-        // (à implémenter selon votre logique d'authentification)
-        
-        const payment = await paymentService.createPayment(validatedData);
+        // Les données sont déjà validées par le middleware
+        const payment = await paymentService.createPayment(req.body);
         
         logger.info(`Paiement créé avec succès - ID: ${payment.id}`, { 
             paymentId: payment.id,
@@ -31,9 +25,30 @@ const createPayment = async (req, res, next) => {
     } catch (error) {
         logger.error('Erreur lors de la création du paiement', { 
             error: error.message,
+            stack: error.stack,
             body: req.body 
         });
-        next(error);
+        
+        // Gestion des erreurs spécifiques
+        if (error.message.includes('existe déjà')) {
+            return res.status(409).json({
+                success: false,
+                error: error.message
+            });
+        }
+        
+        if (error.message.includes('non trouvée')) {
+            return res.status(404).json({
+                success: false,
+                error: error.message
+            });
+        }
+        
+        res.status(500).json({
+            success: false,
+            error: 'Erreur lors de la création du paiement',
+            details: error.message
+        });
     }
 };
 
@@ -50,7 +65,10 @@ const getPayments = async (req, res, next) => {
             status, 
             payment_method, 
             start_date, 
-            end_date 
+            end_date,
+            order_id,
+            user_id,
+            plan_id
         } = req.query;
         
         const result = await paymentService.getPayments({
@@ -59,7 +77,10 @@ const getPayments = async (req, res, next) => {
             status,
             payment_method,
             start_date,
-            end_date
+            end_date,
+            order_id: order_id ? parseInt(order_id) : undefined,
+            user_id: user_id ? parseInt(user_id) : undefined,
+            plan_id: plan_id ? parseInt(plan_id) : undefined
         });
         
         res.json({
@@ -67,7 +88,16 @@ const getPayments = async (req, res, next) => {
             ...result
         });
     } catch (error) {
-        next(error);
+        logger.error('Erreur lors de la récupération des paiements', { 
+            error: error.message,
+            stack: error.stack
+        });
+        
+        res.status(500).json({
+            success: false,
+            error: 'Erreur lors de la récupération des paiements',
+            details: error.message
+        });
     }
 };
 
@@ -80,9 +110,6 @@ const getPaymentById = async (req, res, next) => {
     try {
         const payment = await paymentService.getPaymentById(req.params.id);
         
-        // Vérifier si l'utilisateur a le droit de voir ce paiement
-        // (à implémenter selon votre logique d'autorisation)
-        
         res.json({
             success: true,
             data: payment
@@ -90,9 +117,22 @@ const getPaymentById = async (req, res, next) => {
     } catch (error) {
         logger.error('Erreur lors de la récupération du paiement', { 
             error: error.message,
+            stack: error.stack,
             paymentId: req.params.id 
         });
-        next(error);
+        
+        if (error.message.includes('non trouvé')) {
+            return res.status(404).json({
+                success: false,
+                error: error.message
+            });
+        }
+        
+        res.status(500).json({
+            success: false,
+            error: 'Erreur lors de la récupération du paiement',
+            details: error.message
+        });
     }
 };
 
@@ -105,14 +145,12 @@ const updatePayment = async (req, res, next) => {
     try {
         const { id } = req.params;
         
-        // Validation des données
-        const updateData = updatePaymentValidation(req.body);
-        
-        const payment = await paymentService.updatePayment(id, updateData);
+        // Les données sont déjà validées par le middleware
+        const payment = await paymentService.updatePayment(id, req.body);
         
         logger.info(`Paiement mis à jour - ID: ${id}`, { 
             paymentId: id,
-            updates: updateData
+            updates: req.body
         });
         
         res.json({
@@ -123,10 +161,30 @@ const updatePayment = async (req, res, next) => {
     } catch (error) {
         logger.error('Erreur lors de la mise à jour du paiement', { 
             error: error.message,
+            stack: error.stack,
             paymentId: req.params.id,
             updates: req.body
         });
-        next(error);
+        
+        if (error.message.includes('non trouvé')) {
+            return res.status(404).json({
+                success: false,
+                error: error.message
+            });
+        }
+        
+        if (error.message.includes('Statut invalide')) {
+            return res.status(400).json({
+                success: false,
+                error: error.message
+            });
+        }
+        
+        res.status(500).json({
+            success: false,
+            error: 'Erreur lors de la mise à jour du paiement',
+            details: error.message
+        });
     }
 };
 
@@ -137,20 +195,47 @@ const updatePayment = async (req, res, next) => {
  */
 const deletePayment = async (req, res, next) => {
     try {
-        await paymentService.deletePayment(req.params.id);
+        const paymentId = parseInt(req.params.id);
         
-        logger.info(`Paiement supprimé - ID: ${req.params.id}`);
-        
-        res.status(204).json({
-            success: true,
-            message: 'Paiement supprimé avec succès',
-            data: null
+        logger.info('[PaymentController] [deletePayment] Suppression', {
+            paymentId,
+            requestingUser: req.user?.id
         });
+        
+        // Vérifier que le paiement existe
+        const payment = await paymentService.getPaymentById(paymentId);
+        if (!payment) {
+            return res.status(404).json({
+                success: false,
+                error: 'Paiement non trouvé'
+            });
+        }
+        
+        await paymentService.deletePayment(paymentId);
+        
+        // 204 No Content ne doit pas avoir de body
+        res.status(204).send();
     } catch (error) {
-        logger.error('Erreur lors de la suppression du paiement', { 
+        logger.error('[PaymentController] [deletePayment] Erreur', {
             error: error.message,
-            paymentId: req.params.id 
+            paymentId: req.params.id,
+            stack: error.stack
         });
+        
+        if (error.message.includes('non trouvé') || error.message.includes('inexistant')) {
+            return res.status(404).json({
+                success: false,
+                error: 'Paiement non trouvé'
+            });
+        }
+        
+        if (error.message.includes('Impossible de supprimer')) {
+            return res.status(400).json({
+                success: false,
+                error: error.message
+            });
+        }
+        
         next(error);
     }
 };
@@ -181,10 +266,30 @@ const updatePaymentStatus = async (req, res, next) => {
     } catch (error) {
         logger.error('Erreur lors de la mise à jour du statut du paiement', { 
             error: error.message,
+            stack: error.stack,
             paymentId: req.params.id,
             status: req.body.status
         });
-        next(error);
+        
+        if (error.message.includes('non trouvé')) {
+            return res.status(404).json({
+                success: false,
+                error: error.message
+            });
+        }
+        
+        if (error.message.includes('Statut invalide')) {
+            return res.status(400).json({
+                success: false,
+                error: error.message
+            });
+        }
+        
+        res.status(500).json({
+            success: false,
+            error: 'Erreur lors de la mise à jour du statut',
+            details: error.message
+        });
     }
 };
 
@@ -197,13 +302,6 @@ const refundPayment = async (req, res, next) => {
     try {
         const { id } = req.params;
         const { reason } = req.body;
-        
-        if (!reason) {
-            return res.status(400).json({
-                success: false,
-                error: 'La raison du remboursement est requise'
-            });
-        }
         
         const payment = await paymentService.refundPayment(id, reason);
         
@@ -220,10 +318,31 @@ const refundPayment = async (req, res, next) => {
     } catch (error) {
         logger.error('Erreur lors du remboursement du paiement', { 
             error: error.message,
+            stack: error.stack,
             paymentId: req.params.id,
             reason: req.body.reason
         });
-        next(error);
+        
+        if (error.message.includes('non trouvé')) {
+            return res.status(404).json({
+                success: false,
+                error: error.message
+            });
+        }
+        
+        if (error.message.includes('Seuls les paiements réussis') || 
+            error.message.includes('déjà été remboursé')) {
+            return res.status(400).json({
+                success: false,
+                error: error.message
+            });
+        }
+        
+        res.status(500).json({
+            success: false,
+            error: 'Erreur lors du remboursement',
+            details: error.message
+        });
     }
 };
 
@@ -242,8 +361,3 @@ module.exports = {
     updatePaymentStatus,
     refundPayment
 };
-
-
-
-
-

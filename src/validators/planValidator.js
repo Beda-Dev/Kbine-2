@@ -83,7 +83,8 @@ const planSchema = Joi.object({
 const createPlanValidation = (data) => {
     return planSchema.validate(data, {
         abortEarly: false,
-        stripUnknown: true
+        stripUnknown: false,  //  garde tous les champs
+        convert: true  //  convertit "3" en 3 automatiquement
     });
 };
 

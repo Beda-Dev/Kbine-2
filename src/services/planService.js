@@ -278,99 +278,87 @@ const findAll = async (includeInactive = false) => {
 /**
  * Trouve les plans par numéro de téléphone en fonction du préfixe
  * @param {string} phoneNumber - Le numéro de téléphone à rechercher
- * @returns {Promise<Array>} Liste des plans disponibles pour l'opérateur du numéro
+ * @returns {Promise<Object>} Objet contenant l'opérateur et la liste des plans triés par ID
  */
 const findByPhoneNumber = async (phoneNumber) => {
     const context = '[PlanService] [findByPhoneNumber]';
     console.log(`${context} Début de recherche par numéro de téléphone`, {
-        phoneNumberLength: phoneNumber?.length
+        phoneNumber: phoneNumber ? `${phoneNumber.substring(0, 4)}***` : 'undefined'
     });
 
     try {
+        // Validation du numéro de téléphone
         if (!phoneNumber || typeof phoneNumber !== 'string' || phoneNumber.length < 2) {
-            console.log(`${context} Numéro de téléphone invalide`, {
-                phoneNumber,
-                type: typeof phoneNumber,
-                length: phoneNumber?.length
-            });
-            logger.warn(`${context} Numéro de téléphone invalide`, { phoneNumber });
             throw new Error('Numéro de téléphone invalide');
         }
 
-        // Extraire le préfixe (2 premiers chiffres après le 0)
+        // Récupérer les 2 premiers chiffres du numéro
         const prefix = phoneNumber.substring(0, 2);
-        console.log(`${context} Préfixe extrait`, { prefix, originalPhone: phoneNumber.substring(0, 4) + '***' });
-
-        logger.debug(`${context} Recherche des plans pour le préfixe`, {
-            phoneNumber: '***',
-            prefix
-        });
+        console.log(`${context} Préfixe extrait:`, { prefix });
 
         // Trouver l'opérateur correspondant au préfixe
-        console.log(`${context} Recherche de l'opérateur pour le préfixe`, { prefix });
-        const [operators] = await db.execute(
-            'SELECT id, name FROM operators WHERE JSON_CONTAINS(prefixes, ?)',
-            [`"${prefix}"`]
-        );
-        console.log(`${context} Recherche opérateur terminée`, { operatorsFound: operators.length });
+        const [operators] = await db.query(`
+            SELECT o.id, o.name, o.code 
+            FROM operators o
+            WHERE JSON_CONTAINS(o.prefixes, JSON_QUOTE(?))
+            LIMIT 1
+        `, [prefix]);
 
-        if (operators.length === 0) {
-            console.log(`${context} Aucun opérateur trouvé pour ce préfixe`, { prefix });
-            logger.info(`${context} Aucun opérateur trouvé pour ce préfixe`, { prefix });
-            return [];
+        if (!operators || operators.length === 0) {
+            logger.warn(`${context} Aucun opérateur trouvé pour le préfixe`, { prefix });
+            throw new Error('Aucun opérateur trouvé pour ce numéro');
         }
 
         const operator = operators[0];
-        console.log(`${context} Opérateur identifié`, {
+        console.log(`${context} Opérateur trouvé:`, {
+            id: operator.id,
+            name: operator.name,
+            code: operator.code
+        });
+
+        // Récupérer les plans actifs pour cet opérateur, triés par ID croissant
+        const [plans] = await db.query(`
+            SELECT 
+                id, 
+                name, 
+                description, 
+                price, 
+                type, 
+                validity_days
+            FROM plans 
+            WHERE operator_id = ? 
+            AND active = TRUE
+            ORDER BY id ASC
+        `, [operator.id]);
+
+        console.log(`${context} ${plans.length} plans trouvés pour l'opérateur`, {
             operatorId: operator.id,
             operatorName: operator.name
         });
 
-        logger.debug(`${context} Opérateur identifié`, {
-            operatorId: operator.id,
-            operatorName: operator.name
-        });
-
-        // Récupérer tous les plans actifs pour cet opérateur
-        console.log(`${context} Récupération des plans actifs pour l'opérateur`, {
-            operatorId: operator.id,
-            operatorName: operator.name
-        });
-        const [plans] = await db.execute(
-            `SELECT p.*, o.name as operator_name, o.code as operator_code
-             FROM plans p
-             JOIN operators o ON p.operator_id = o.id
-             WHERE p.operator_id = ? AND p.active = ?
-             ORDER BY p.price`,
-            [operator.id, true]
-        );
-        console.log(`${context} Plans récupérés`, {
-            plansCount: plans.length,
-            operatorName: operator.name
-        });
-
-        logger.info(`${context} Plans trouvés`, {
-            count: plans.length,
-            operator: operator.name
-        });
-
-        console.log(`${context} Recherche terminée avec succès`, {
-            plansCount: plans.length,
-            operatorName: operator.name
-        });
-        return plans;
-
+        // Formater la réponse selon le format demandé
+        return {
+            operator: {
+                id: operator.id,
+                name: operator.name,
+                code: operator.code
+            },
+            plans: plans.map(plan => ({
+                id: plan.id,
+                name: plan.name,
+                description: plan.description || '',
+                price: parseFloat(plan.price),
+                type: plan.type,
+                validity_days: plan.validity_days
+            }))
+        };
     } catch (error) {
-        console.log(`${context} Erreur lors de la recherche`, {
+        logger.error(`${context} Erreur lors de la recherche par numéro:`, {
             error: error.message,
-            phoneNumber: phoneNumber ? phoneNumber.substring(0, 4) + '***' : 'undefined'
+            phoneNumber: phoneNumber ? `${phoneNumber.substring(0, 4)}***` : 'undefined',
+            stack: error.stack
         });
-        logger.error(`${context} Erreur lors de la recherche par numéro`, {
-            error: error.message,
-            stack: error.stack,
-            phoneNumber: '***'
-        });
-        throw new Error('Erreur lors de la recherche des plans pour ce numéro');
+        throw error;
     }
 };
 

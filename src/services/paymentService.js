@@ -79,17 +79,27 @@ const createPayment = async (paymentData) => {
         }
 
         // Vérifier si la commande existe - CORRECTION ICI
-        const [order] = await connection.query(
+        // ✅ PAR CE CODE (CORRECT)
+        const [orderResults] = await connection.query(
             'SELECT id, status FROM orders WHERE id = ?',
             [paymentData.order_id]
         );
 
-        console.log('[PaymentService] createPayment - Vérification commande', { orderFound: order.length > 0 });
+        console.log('[PaymentService] createPayment - Vérification commande', {
+            orderFound: orderResults.length > 0,
+            orderCount: orderResults.length
+        });
 
-        if (!order || order.length === 0) {
+        if (!orderResults || orderResults.length === 0) {
             console.log('[PaymentService] createPayment - Commande non trouvée');
             throw new Error('Commande non trouvée');
         }
+
+        const order = orderResults[0]; // Récupérer la première commande trouvée
+        console.log('[PaymentService] createPayment - Commande trouvée', {
+            orderId: order.id,
+            orderStatus: order.status
+        });
 
         // Création du paiement
         const payment = {
@@ -251,11 +261,18 @@ const updatePayment = async (id, updateData) => {
 
 /**
  * Supprime un paiement (soft delete)
- * @param {number} id - ID du paiement à supprimer
+ * @param {number|string} id - ID du paiement à supprimer
  * @returns {Promise<boolean>} True si la suppression a réussi
+ * @throws {Error} Si le paiement n'existe pas ou ne peut pas être supprimé
  */
 const deletePayment = async (id) => {
-    console.log('[PaymentService] deletePayment - Début de suppression', { paymentId: id });
+    // Validation de l'ID
+    if (!id || (isNaN(parseInt(id)) && typeof id !== 'number')) {
+        throw new Error('ID de paiement invalide');
+    }
+    
+    const paymentId = parseInt(id);
+    console.log('[PaymentService] deletePayment - Début de suppression', { paymentId });
 
     const connection = await db.getConnection();
 
@@ -264,7 +281,7 @@ const deletePayment = async (id) => {
         console.log('[PaymentService] deletePayment - Transaction démarrée');
 
         // Vérifier que le paiement existe
-        const [payments] = await connection.query('SELECT * FROM payments WHERE id = ?', [id]);
+        const [payments] = await connection.query('SELECT * FROM payments WHERE id = ?', [paymentId]);
         console.log('[PaymentService] deletePayment - Recherche paiement', { found: payments.length > 0 });
 
         if (!payments || payments.length === 0) {
@@ -273,7 +290,11 @@ const deletePayment = async (id) => {
         }
 
         const payment = payments[0];
-        console.log('[PaymentService] deletePayment - Paiement trouvé', { status: payment.status });
+        console.log('[PaymentService] deletePayment - Paiement trouvé', { 
+            id: payment.id, 
+            status: payment.status,
+            order_id: payment.order_id
+        });
 
         // Vérifier si le paiement peut être supprimé
         if (payment.status === 'success') {
@@ -281,44 +302,87 @@ const deletePayment = async (id) => {
             throw new Error('Impossible de supprimer un paiement réussi. Veuillez effectuer un remboursement.');
         }
 
-        // Soft delete en changeant le statut à 'failed'
-        // Stocker l'info de suppression dans callback_data
+        // Préparer les données de callback
         let callbackData = {};
         if (payment.callback_data) {
-            try {
-                callbackData = JSON.parse(payment.callback_data);
-            } catch (e) {
-                callbackData = {};
-            }
+            // Si callback_data est déjà un objet (grâce au support JSON de MySQL), on l'utilise directement
+            callbackData = typeof payment.callback_data === 'object' 
+                ? { ...payment.callback_data } 
+                : {};
         }
-        callbackData.deleted = true;
-        callbackData.deleted_at = new Date().toISOString();
-        callbackData.notes = 'Paiement annulé/supprimé';
-        console.log('[PaymentService] deletePayment - Préparation du soft delete');
 
-        await connection.query(
+        // Mettre à jour les métadonnées de suppression
+        const now = new Date();
+        callbackData = {
+            ...callbackData,
+            deleted: true,
+            deleted_at: now.toISOString(),
+            notes: (callbackData.notes || '') + '\nPaiement annulé/supprimé le ' + now.toISOString()
+        };
+
+        console.log('[PaymentService] deletePayment - Préparation du soft delete', { 
+            callbackData,
+            paymentId
+        });
+
+        // Mettre à jour le paiement avec le nouveau statut et les métadonnées
+        const [result] = await connection.query(
             'UPDATE payments SET status = ?, callback_data = ?, updated_at = ? WHERE id = ?',
-            ['failed', JSON.stringify(callbackData), new Date(), id]
+            ['failed', JSON.stringify(callbackData), now, paymentId]
         );
-        console.log('[PaymentService] deletePayment - Soft delete exécuté');
+
+        if (result.affectedRows === 0) {
+            throw new Error('Aucun paiement mis à jour. Le paiement a peut-être déjà été supprimé.');
+        }
+
+        console.log('[PaymentService] deletePayment - Soft delete exécuté', { affectedRows: result.affectedRows });
 
         await connection.commit();
         console.log('[PaymentService] deletePayment - Transaction validée');
 
-        logger.info(`Paiement supprimé (soft delete) - ID: ${id}`);
+        logger.info(`Paiement supprimé (soft delete) - ID: ${paymentId}`, { 
+            paymentId: paymentId,
+            orderId: payment.order_id
+        });
 
         return true;
     } catch (error) {
-        console.log('[PaymentService] deletePayment - Erreur lors de la suppression', { error: error.message });
-        await connection.rollback();
+        const errorMessage = `Erreur lors de la suppression du paiement: ${error.message}`;
+        console.error('[PaymentService] deletePayment - Erreur', { 
+            error: errorMessage,
+            stack: error.stack,
+            paymentId
+        });
+        
+        if (connection && typeof connection.rollback === 'function') {
+            try {
+                await connection.rollback();
+            } catch (rollbackError) {
+                console.error('[PaymentService] deletePayment - Erreur lors du rollback', {
+                    error: rollbackError.message
+                });
+            }
+        }
+        
         logger.error('Erreur lors de la suppression du paiement', {
             error: error.message,
-            paymentId: id
+            stack: error.stack,
+            paymentId
         });
-        throw error;
+        
+        // Relancer l'erreur avec un message plus clair
+        throw new Error(`Échec de la suppression du paiement: ${error.message}`);
     } finally {
-        connection.release();
-        console.log('[PaymentService] deletePayment - Connexion libérée');
+        try {
+            if (connection && typeof connection.release === 'function') {
+                await connection.release();
+                console.log('[PaymentService] deletePayment - Connexion libérée');
+            }
+        } catch (releaseError) {
+            console.error('[PaymentService] deletePayment - Erreur lors de la libération de la connexion', {
+                error: releaseError.message
+            });
+        }
     }
 };
 
@@ -393,7 +457,11 @@ const getPaymentById = async (id) => {
                     price: payment.plan_price,
                     type: payment.plan_type,
                     validity_days: payment.plan_validity_days,
-                    active: payment.plan_active
+                    active: payment.plan_active,
+                    operator: payment.operator_name ? {
+                        name: payment.operator_name,
+                        code: payment.operator_code
+                    } : null
                 } : null,
                 user: payment.user_id ? {
                     id: payment.user_id,
@@ -410,6 +478,7 @@ const getPaymentById = async (id) => {
             'order_status', 'order_payment_method', 'order_payment_reference',
             'order_created_at', 'order_updated_at', 'plan_name', 'plan_description',
             'plan_price', 'plan_type', 'plan_validity_days', 'plan_active',
+            'plan_operator_id', 
             'operator_name', 'operator_code', 'user_phone', 'user_role', 'user_created_at'
         ].forEach(field => delete payment[field]);
         console.log('[PaymentService] getPaymentById - Champs inutiles supprimés');
