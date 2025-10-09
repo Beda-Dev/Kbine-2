@@ -19,7 +19,7 @@ const PHONE_NUMBER_REGEX = /^(\+225[0-9]{8}|0[0-9]{9})$/;
 /**
  * Rechercher un utilisateur par ID
  */
-const findById = async (userId) => {
+const findById = async (userId, includeOrders = false) => {
   console.log(`[userService] Recherche de l'utilisateur avec l'ID: ${userId}`);
   
   if (!userId || isNaN(parseInt(userId, 10))) {
@@ -32,12 +32,58 @@ const findById = async (userId) => {
     console.log(`[userService] Exécution de la requête pour l'ID: ${userId}`);
     
     const [rows] = await db.execute(
-      'SELECT id, phone_number as phone_number, role, created_at as createdAt FROM users WHERE id = ?',
+      'SELECT id, phone_number as phone_number, role, created_at as createdAt, updated_at as updatedAt FROM users WHERE id = ?',
       [userId]
     );
     
     console.log(`[userService] Résultat de la recherche pour l'ID ${userId}:`, rows.length > 0 ? 'trouvé' : 'non trouvé');
-    return rows[0] || null;
+    
+    if (rows.length === 0) {
+      return null;
+    }
+    
+    const user = rows[0];
+    
+    // Si on doit inclure les commandes
+    if (includeOrders) {
+      const [orders] = await db.execute(
+        `SELECT o.*, 
+                p.name as plan_name, p.description as plan_description, p.price as plan_price, 
+                p.type as plan_type, p.validity_days as plan_validity_days,
+                op.name as operator_name, op.code as operator_code
+         FROM orders o
+         LEFT JOIN plans p ON o.plan_id = p.id
+         LEFT JOIN operators op ON p.operator_id = op.id
+         WHERE o.user_id = ?
+         ORDER BY o.created_at DESC`,
+        [userId]
+      );
+      
+      // Formater les commandes
+      user.orders = orders.map(order => ({
+        id: order.id,
+        plan_id: order.plan_id,
+        phone_number: order.phone_number,
+        amount: order.amount,
+        status: order.status,
+        payment_method: order.payment_method,
+        payment_reference: order.payment_reference,
+        created_at: order.created_at,
+        updated_at: order.updated_at,
+        plan: order.plan_id ? {
+          id: order.plan_id,
+          name: order.plan_name,
+          description: order.plan_description,
+          price: order.plan_price,
+          type: order.plan_type,
+          validity_days: order.plan_validity_days,
+          operator_name: order.operator_name,
+          operator_code: order.operator_code
+        } : null
+      }));
+    }
+    
+    return user;
   } catch (error) {
     console.error('[userService] Erreur lors de la recherche par ID:', {
       error: error.message,
@@ -51,7 +97,7 @@ const findById = async (userId) => {
 /**
  * Rechercher un utilisateur par numéro de téléphone
  */
-const findByPhoneNumber = async (phoneNumber) => {
+const findByPhoneNumber = async (phoneNumber, includeOrders = false) => {
   console.log(`[userService] Recherche par numéro: ${phoneNumber}`);
   
   if (!phoneNumber || !PHONE_NUMBER_REGEX.test(phoneNumber)) {
@@ -64,12 +110,58 @@ const findByPhoneNumber = async (phoneNumber) => {
     console.log(`[userService] Exécution de la requête pour le numéro: ${phoneNumber}`);
     
     const [rows] = await db.execute(
-      'SELECT id, phone_number as phone_number, role, created_at as createdAt FROM users WHERE phone_number = ?',
+      'SELECT id, phone_number as phone_number, role, created_at as createdAt, updated_at as updatedAt FROM users WHERE phone_number = ?',
       [phoneNumber]
     );
     
     console.log(`[userService] Résultat de la recherche pour ${phoneNumber}:`, rows.length > 0 ? 'trouvé' : 'non trouvé');
-    return rows[0] || null;
+    
+    if (rows.length === 0) {
+      return null;
+    }
+    
+    const user = rows[0];
+    
+    // Si on doit inclure les commandes
+    if (includeOrders) {
+      const [orders] = await db.execute(
+        `SELECT o.*, 
+                p.name as plan_name, p.description as plan_description, p.price as plan_price, 
+                p.type as plan_type, p.validity_days as plan_validity_days,
+                op.name as operator_name, op.code as operator_code
+         FROM orders o
+         LEFT JOIN plans p ON o.plan_id = p.id
+         LEFT JOIN operators op ON p.operator_id = op.id
+         WHERE o.user_id = ?
+         ORDER BY o.created_at DESC`,
+        [user.id]
+      );
+      
+      // Formater les commandes
+      user.orders = orders.map(order => ({
+        id: order.id,
+        plan_id: order.plan_id,
+        phone_number: order.phone_number,
+        amount: order.amount,
+        status: order.status,
+        payment_method: order.payment_method,
+        payment_reference: order.payment_reference,
+        created_at: order.created_at,
+        updated_at: order.updated_at,
+        plan: order.plan_id ? {
+          id: order.plan_id,
+          name: order.plan_name,
+          description: order.plan_description,
+          price: order.plan_price,
+          type: order.plan_type,
+          validity_days: order.plan_validity_days,
+          operator_name: order.operator_name,
+          operator_code: order.operator_code
+        } : null
+      }));
+    }
+    
+    return user;
   } catch (error) {
     console.error('[userService] Erreur lors de la recherche par numéro:', {
       error: error.message,
