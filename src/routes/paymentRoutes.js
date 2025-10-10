@@ -13,7 +13,7 @@ const {
 const { authenticateToken, requireRole } = require('../middlewares/auth');
 
 // Middleware pour vérifier les rôles
-const requireAdmin = requireRole('admin');
+const requireAdmin = requireRole(['admin']);
 const requireStaffOrAdmin = requireRole(['staff', 'admin']);
 
 /**
@@ -98,30 +98,39 @@ router.get('/:id',
  * @route   PUT /api/payments/:id
  * @desc    Mettre à jour un paiement
  * @access  Private (Admin)
+ * 🔧 CORRECTION: Simplification de la validation
  */
 router.put('/:id', 
     authenticateToken, 
     requireAdmin,
     (req, res, next) => {
+        console.log('[PaymentRoutes] PUT /api/payments/:id - Début validation', {
+            paymentId: req.params.id,
+            body: req.body
+        });
+        
         // Validation de l'ID
-        const idResult = paymentIdValidation(parseInt(req.params.id));
-        if (idResult.error) {
+        const paymentId = parseInt(req.params.id);
+        if (isNaN(paymentId)) {
+            console.log('[PaymentRoutes] ID invalide');
             return res.status(400).json({
                 success: false,
-                error: 'ID de paiement invalide',
-                details: idResult.error.details.map(d => d.message)
+                error: 'ID de paiement invalide'
             });
         }
         
         // Validation des données de mise à jour
         const { error } = updatePaymentValidation(req.body);
         if (error) {
+            console.log('[PaymentRoutes] Erreur validation données:', error.details);
             return res.status(400).json({
                 success: false,
                 error: 'Données de mise à jour invalides',
                 details: error.details.map(d => d.message)
             });
         }
+        
+        console.log('[PaymentRoutes] Validation OK, passage au contrôleur');
         next();
     },
     paymentController.updatePayment
@@ -131,19 +140,27 @@ router.put('/:id',
  * @route   DELETE /api/payments/:id
  * @desc    Supprimer un paiement (soft delete)
  * @access  Private (Admin)
+ * 🔧 CORRECTION: Simplification de la validation
  */
 router.delete('/:id', 
     authenticateToken, 
     requireAdmin,
     (req, res, next) => {
-        const { error } = paymentIdValidation(parseInt(req.params.id));
-        if (error) {
+        console.log('[PaymentRoutes] DELETE /api/payments/:id - Début validation', {
+            paymentId: req.params.id
+        });
+        
+        // Validation de l'ID
+        const paymentId = parseInt(req.params.id);
+        if (isNaN(paymentId)) {
+            console.log('[PaymentRoutes] ID invalide');
             return res.status(400).json({
                 success: false,
-                error: 'ID de paiement invalide',
-                details: error.details.map(d => d.message)
+                error: 'ID de paiement invalide'
             });
         }
+        
+        console.log('[PaymentRoutes] Validation OK, passage au contrôleur');
         next();
     },
     paymentController.deletePayment

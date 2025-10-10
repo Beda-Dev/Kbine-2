@@ -9,7 +9,6 @@ const { PAYMENT_METHODS, PAYMENT_STATUS } = paymentService;
  */
 const createPayment = async (req, res, next) => {
     try {
-        // Les données sont déjà validées par le middleware
         const payment = await paymentService.createPayment(req.body);
         
         logger.info(`Paiement créé avec succès - ID: ${payment.id}`, { 
@@ -29,7 +28,6 @@ const createPayment = async (req, res, next) => {
             body: req.body 
         });
         
-        // Gestion des erreurs spécifiques
         if (error.message.includes('existe déjà')) {
             return res.status(409).json({
                 success: false,
@@ -140,13 +138,33 @@ const getPaymentById = async (req, res, next) => {
  * @route   PUT /api/payments/:id
  * @desc    Mettre à jour un paiement
  * @access  Private/Admin
+ * 🔧 CORRECTION: Ajout de logs détaillés et meilleure gestion des erreurs
  */
 const updatePayment = async (req, res, next) => {
     try {
         const { id } = req.params;
         
-        // Les données sont déjà validées par le middleware
-        const payment = await paymentService.updatePayment(id, req.body);
+        console.log('[PaymentController] [updatePayment] Début', {
+            paymentId: id,
+            body: req.body,
+            userId: req.user?.id
+        });
+        
+        // Validation de l'ID
+        const paymentId = parseInt(id);
+        if (isNaN(paymentId)) {
+            console.log('[PaymentController] [updatePayment] ID invalide');
+            return res.status(400).json({
+                success: false,
+                error: 'ID de paiement invalide'
+            });
+        }
+        
+        // Appel du service
+        console.log('[PaymentController] [updatePayment] Appel du service');
+        const payment = await paymentService.updatePayment(paymentId, req.body);
+        
+        console.log('[PaymentController] [updatePayment] Succès', { paymentId: id });
         
         logger.info(`Paiement mis à jour - ID: ${id}`, { 
             paymentId: id,
@@ -159,6 +177,12 @@ const updatePayment = async (req, res, next) => {
             data: payment
         });
     } catch (error) {
+        console.error('[PaymentController] [updatePayment] Erreur', {
+            error: error.message,
+            stack: error.stack,
+            paymentId: req.params.id
+        });
+        
         logger.error('Erreur lors de la mise à jour du paiement', { 
             error: error.message,
             stack: error.stack,
@@ -192,37 +216,55 @@ const updatePayment = async (req, res, next) => {
  * @route   DELETE /api/payments/:id
  * @desc    Supprimer un paiement (soft delete)
  * @access  Private/Admin
+ * 🔧 CORRECTION: Ajout de logs détaillés et meilleure gestion des erreurs
  */
 const deletePayment = async (req, res, next) => {
     try {
-        const paymentId = parseInt(req.params.id);
+        const { id } = req.params;
         
-        logger.info('[PaymentController] [deletePayment] Suppression', {
-            paymentId,
-            requestingUser: req.user?.id
+        console.log('[PaymentController] [deletePayment] Début', {
+            paymentId: id,
+            userId: req.user?.id,
+            userRole: req.user?.role
         });
         
-        // Vérifier que le paiement existe
-        const payment = await paymentService.getPaymentById(paymentId);
-        if (!payment) {
-            return res.status(404).json({
+        // Validation de l'ID
+        const paymentId = parseInt(id);
+        if (isNaN(paymentId)) {
+            console.log('[PaymentController] [deletePayment] ID invalide');
+            return res.status(400).json({
                 success: false,
-                error: 'Paiement non trouvé'
+                error: 'ID de paiement invalide'
             });
         }
         
+        // Appel du service
+        console.log('[PaymentController] [deletePayment] Appel du service');
         await paymentService.deletePayment(paymentId);
         
-        // 204 No Content ne doit pas avoir de body
-        res.status(204).send();
-    } catch (error) {
-        logger.error('[PaymentController] [deletePayment] Erreur', {
-            error: error.message,
-            paymentId: req.params.id,
-            stack: error.stack
+        console.log('[PaymentController] [deletePayment] Succès', { paymentId: id });
+        
+        logger.info(`Paiement supprimé - ID: ${id}`, { 
+            paymentId: id,
+            deletedBy: req.user?.id
         });
         
-        if (error.message.includes('non trouvé') || error.message.includes('inexistant')) {
+        // 204 No Content - pas de body dans la réponse
+        res.status(204).send();
+    } catch (error) {
+        console.error('[PaymentController] [deletePayment] Erreur', {
+            error: error.message,
+            stack: error.stack,
+            paymentId: req.params.id
+        });
+        
+        logger.error('Erreur lors de la suppression du paiement', {
+            error: error.message,
+            stack: error.stack,
+            paymentId: req.params.id
+        });
+        
+        if (error.message.includes('non trouvé')) {
             return res.status(404).json({
                 success: false,
                 error: 'Paiement non trouvé'
@@ -236,7 +278,11 @@ const deletePayment = async (req, res, next) => {
             });
         }
         
-        next(error);
+        res.status(500).json({
+            success: false,
+            error: 'Erreur lors de la suppression du paiement',
+            details: error.message
+        });
     }
 };
 

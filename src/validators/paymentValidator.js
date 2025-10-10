@@ -90,6 +90,14 @@ const createPaymentValidation = (data) => {
  */
 const updatePaymentValidation = (data) => {
     const updateSchema = Joi.object({
+        order_id: Joi.number()
+            .integer()
+            .positive()
+            .messages({
+                'number.base': 'L\'ID de la commande doit être un nombre',
+                'number.integer': 'L\'ID de la commande doit être un entier',
+                'number.positive': 'L\'ID de la commande doit être un nombre positif'
+            }),
         amount: Joi.number()
             .positive()
             .precision(2)
