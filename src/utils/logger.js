@@ -1,162 +1,136 @@
 /**
- * Configuration du systeme de logs avec Winston
+ * Logger compatible Vercel Serverless
  * 
- * Ce fichier configure Winston, une librairie de logging robuste pour Node.js.
- * Il gere les logs a differents niveaux et les envoie vers plusieurs destinations.
- * 
- * Niveaux de logs (du plus critique au moins critique):
- * - error: Erreurs critiques (pannes, exceptions)
- * - warn: Avertissements (problemes non bloquants)
- * - info: Informations generales (demarrage, connexions)
- * - debug: Informations de debug (developpement)
- * 
- * Destinations des logs:
- * - Fichier error.log: Erreurs uniquement
- * - Fichier combined.log: Tous les logs
- * - Console: En developpement uniquement (avec couleurs)
- * 
- * Usage dans le code:
- * const logger = require('../utils/logger');
- * logger.info('Serveur demarre');
- * logger.error('Erreur de connexion DB', error);
+ * ⚠️ IMPORTANT: Vercel utilise un système de fichiers en lecture seule
+ * On ne peut PAS écrire dans des fichiers, donc on désactive les transports File
+ * et on utilise uniquement Console qui est capturé par les logs Vercel
  */
 
-// Import de la librairie Winston pour le logging
 const winston = require('winston');
+const path = require('path');
 
-// ===============================
-// CONFIGURATION DU LOGGER PRINCIPAL
-// ===============================
+// Détection de l'environnement Vercel
+const isVercel = process.env.VERCEL === '1' || process.env.VERCEL_ENV;
+const isProduction = process.env.NODE_ENV === 'production';
 
-/**
- * Creation du logger principal avec Winston
- * 
- * Winston permet de gerer plusieurs "transports" (destinations)
- * et formatages pour les logs selon l'environnement
- */
-const logger = winston.createLogger({
-  // ===== NIVEAU DE LOG =====
-  
-  /**
-   * Niveau minimum des logs a capturer
-   * 
-   * Configurable via la variable d'environnement LOG_LEVEL
-   * Valeurs possibles: error, warn, info, debug
-   * Par defaut: info (capture info, warn, error)
-   */
-  level: process.env.LOG_LEVEL || 'info',
-  
-  // ===== FORMAT DES LOGS =====
-  
-  /**
-   * Formatage des logs pour les fichiers
-   * 
-   * winston.format.combine() permet de combiner plusieurs formatages:
-   * - timestamp(): Ajoute la date/heure du log
-   * - errors({ stack: true }): Inclut la stack trace pour les erreurs
-   * - json(): Format JSON pour faciliter le parsing par des outils
-   */
-  format: winston.format.combine(
-    winston.format.timestamp(), // ISO timestamp (2024-01-01T10:30:00.000Z)
-    winston.format.errors({ stack: true }), // Stack trace complete des erreurs
-    winston.format.json() // Format JSON structure
-  ),
-  
-  // ===== METADATA GLOBALE =====
-  
-  /**
-   * Metadata ajoutee automatiquement a tous les logs
-   * Utile pour identifier le service dans un environnement multi-services
-   */
-  defaultMeta: { service: 'kbine-backend' },
-  
-  // ===== TRANSPORTS (DESTINATIONS) =====
-  
-  /**
-   * Liste des destinations pour les logs
-   * Chaque transport peut avoir son propre niveau et format
-   */
-  transports: [
-    /**
-     * Transport 1: Fichier pour les erreurs uniquement
-     * 
-     * Fichier: logs/error.log
-     * Contenu: Uniquement les logs de niveau 'error'
-     * Usage: Monitoring et alertes en production
-     */
-    new winston.transports.File({ 
-      filename: 'logs/error.log', 
-      level: 'error' 
-    }),
+// Configuration des niveaux de log
+const levels = {
+  error: 0,
+  warn: 1,
+  info: 2,
+  http: 3,
+  debug: 4,
+};
+
+// Couleurs pour chaque niveau
+const colors = {
+  error: 'red',
+  warn: 'yellow',
+  info: 'green',
+  http: 'magenta',
+  debug: 'blue',
+};
+
+winston.addColors(colors);
+
+// Format personnalisé pour les logs
+const customFormat = winston.format.combine(
+  winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+  winston.format.errors({ stack: true }),
+  winston.format.splat(),
+  winston.format.json()
+);
+
+// Format pour la console (plus lisible)
+const consoleFormat = winston.format.combine(
+  winston.format.colorize({ all: true }),
+  winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+  winston.format.printf((info) => {
+    const { timestamp, level, message, ...meta } = info;
+    let logMessage = `${timestamp} [${level}]: ${message}`;
     
-    /**
-     * Transport 2: Fichier pour tous les logs
-     * 
-     * Fichier: logs/combined.log
-     * Contenu: Tous les logs (selon le niveau global)
-     * Usage: Historique complet pour debugging
-     */
-    new winston.transports.File({ 
-      filename: 'logs/combined.log' 
+    // Ajouter les métadonnées si présentes
+    if (Object.keys(meta).length > 0) {
+      logMessage += ` ${JSON.stringify(meta, null, 2)}`;
+    }
+    
+    return logMessage;
+  })
+);
+
+// Configuration des transports
+const transports = [];
+
+// ✅ Console transport (toujours actif - capturé par Vercel)
+transports.push(
+  new winston.transports.Console({
+    format: isVercel ? customFormat : consoleFormat,
+    level: isProduction ? 'info' : 'debug'
+  })
+);
+
+// ⚠️ File transports UNIQUEMENT en local (pas sur Vercel)
+if (!isVercel) {
+  const fs = require('fs');
+  const logsDir = path.join(process.cwd(), 'logs');
+  
+  // Créer le dossier logs s'il n'existe pas
+  if (!fs.existsSync(logsDir)) {
+    try {
+      fs.mkdirSync(logsDir, { recursive: true });
+    } catch (error) {
+      console.error('Impossible de créer le dossier logs:', error.message);
+    }
+  }
+
+  // Log de toutes les erreurs dans error.log
+  transports.push(
+    new winston.transports.File({
+      filename: path.join(logsDir, 'error.log'),
+      level: 'error',
+      format: customFormat,
+      maxsize: 5242880, // 5MB
+      maxFiles: 5,
     })
-  ]
-});
+  );
 
-// ===============================
-// TRANSPORT CONSOLE (DEVELOPPEMENT)
-// ===============================
-
-/**
- * Ajout conditionnel du transport console
- * 
- * En developpement (NODE_ENV != 'production'):
- * - Affiche les logs dans la console
- * - Format colore et simplifie pour la lisibilite
- * - Facilite le debugging en temps reel
- * 
- * En production:
- * - Pas d'affichage console (performance)
- * - Seuls les fichiers de logs sont utilises
- */
-if (process.env.NODE_ENV !== 'production') {
-  logger.add(new winston.transports.Console({
-    /**
-     * Format specifique pour la console
-     * 
-     * winston.format.combine() avec:
-     * - colorize(): Colore les logs selon le niveau (rouge=error, jaune=warn, etc.)
-     * - simple(): Format lisible "timestamp level: message"
-     */
-    format: winston.format.combine(
-      winston.format.colorize(), // Couleurs selon le niveau
-      winston.format.simple() // Format simple et lisible
-    )
-  }));
+  // Log de tout dans combined.log
+  transports.push(
+    new winston.transports.File({
+      filename: path.join(logsDir, 'combined.log'),
+      format: customFormat,
+      maxsize: 5242880, // 5MB
+      maxFiles: 5,
+    })
+  );
 }
 
-// ===============================
-// EXPORT DU LOGGER
-// ===============================
+// Création du logger
+const logger = winston.createLogger({
+  level: isProduction ? 'info' : 'debug',
+  levels,
+  format: customFormat,
+  transports,
+  exitOnError: false,
+});
 
-/**
- * Export du logger configure
- * 
- * Usage dans les autres fichiers:
- * const logger = require('../utils/logger');
- * 
- * Exemples d'utilisation:
- * logger.info('Utilisateur connecte', { userId: 123 });
- * logger.warn('Rate limit atteint', { ip: '192.168.1.1' });
- * logger.error('Erreur DB', error);
- * logger.debug('Debug info', { data: {...} });
- * 
- * Format de sortie (JSON):
- * {
- *   "timestamp": "2024-01-01T10:30:00.000Z",
- *   "level": "info",
- *   "message": "Utilisateur connecte",
- *   "userId": 123,
- *   "service": "kbine-backend"
- * }
- */
+// Message d'information au démarrage
+if (isVercel) {
+  logger.info('🚀 Logger configuré pour Vercel (Console uniquement)', {
+    environment: process.env.VERCEL_ENV || 'production',
+    region: process.env.VERCEL_REGION || 'unknown'
+  });
+} else {
+  logger.info('🚀 Logger configuré en mode local (Console + Files)', {
+    logsDirectory: path.join(process.cwd(), 'logs')
+  });
+}
+
+// Stream pour Morgan (logging HTTP)
+logger.stream = {
+  write: (message) => {
+    logger.http(message.trim());
+  },
+};
+
 module.exports = logger;
