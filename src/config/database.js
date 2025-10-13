@@ -1,19 +1,12 @@
 /**
  * Configuration de la connexion à la base de données PostgreSQL (Neon)
- * 
- * Ce fichier configure la connexion à PostgreSQL en utilisant un pool de connexions.
- * Compatible avec Vercel et Neon Database.
- * 
- * Fonctionnalités:
- * - Pool de connexions réutilisables
- * - Configuration via variables d'environnement
- * - Test automatique de connexion au démarrage
- * - Gestion des timeouts et limites
- * - Compatible avec l'API MySQL2 pour minimiser les changements dans les services
  */
 
 const { Pool } = require('pg');
 const logger = require('../utils/logger');
+
+// Charger les variables d'environnement
+require('dotenv').config();
 
 // ===============================
 // CONFIGURATION DE LA BASE DE DONNÉES
@@ -21,24 +14,36 @@ const logger = require('../utils/logger');
 
 /**
  * Configuration du pool de connexions PostgreSQL
- * 
- * Utilise les variables d'environnement de Neon/Vercel
- * Compatible avec Vercel Serverless
  */
 const config = {
-  // Utiliser DATABASE_URL pour la connexion poolée (recommandé)
+  // Utiliser DATABASE_URL pour la connexion poolée (recommandé pour Neon)
   connectionString: process.env.DATABASE_URL || process.env.POSTGRES_URL,
   
   // Configuration du pool
   max: 10, // Nombre maximum de connexions
   idleTimeoutMillis: 30000, // Fermer les connexions inactives après 30s
-  connectionTimeoutMillis: 60000, // Timeout de connexion de 60s
+  connectionTimeoutMillis: 10000, // Timeout de connexion réduit à 10s pour détecter les erreurs plus vite
   
-  // SSL obligatoire pour Neon
+  // SSL OBLIGATOIRE pour Neon - Configuration corrigée
   ssl: {
-    rejectUnauthorized: false
+    rejectUnauthorized: false // Nécessaire pour Neon
   }
 };
+
+// Log de la configuration (sans exposer le mot de passe)
+logger.info('Configuration PostgreSQL:', {
+  host: process.env.PGHOST,
+  database: process.env.PGDATABASE,
+  user: process.env.PGUSER,
+  ssl: 'enabled',
+  poolSize: config.max
+});
+
+// Vérification que DATABASE_URL est définie
+if (!config.connectionString) {
+  logger.error('❌ DATABASE_URL ou POSTGRES_URL n\'est pas définie dans les variables d\'environnement');
+  process.exit(1);
+}
 
 // ===============================
 // CRÉATION DU POOL DE CONNEXIONS
@@ -48,7 +53,21 @@ const pool = new Pool(config);
 
 // Gestion des erreurs du pool
 pool.on('error', (err) => {
-  logger.error('Erreur inattendue sur le client PostgreSQL inactif', err);
+  logger.error('Erreur inattendue sur le client PostgreSQL inactif', {
+    error: err.message,
+    code: err.code,
+    stack: err.stack
+  });
+});
+
+// Log des connexions réussies
+pool.on('connect', () => {
+  logger.debug('Nouvelle connexion PostgreSQL établie');
+});
+
+// Log des connexions retirées du pool
+pool.on('remove', () => {
+  logger.debug('Connexion PostgreSQL retirée du pool');
 });
 
 // ===============================
@@ -57,9 +76,6 @@ pool.on('error', (err) => {
 
 /**
  * Convertit les requêtes MySQL (?) en requêtes PostgreSQL ($1, $2, etc.)
- * @param {string} sql - Requête SQL avec placeholders MySQL
- * @param {Array} params - Paramètres de la requête
- * @returns {Object} - {sql, params} formatés pour PostgreSQL
  */
 const convertMySQLToPostgreSQL = (sql, params = []) => {
   let paramIndex = 1;
@@ -69,8 +85,6 @@ const convertMySQLToPostgreSQL = (sql, params = []) => {
 
 /**
  * Convertit les résultats PostgreSQL pour ressembler à MySQL2
- * @param {Object} result - Résultat PostgreSQL
- * @returns {Array} - Format [rows, fields] comme MySQL2
  */
 const formatResultForMySQL = (result) => {
   return [result.rows, result.fields || []];
@@ -84,18 +98,43 @@ const formatResultForMySQL = (result) => {
  * Fonction de test de la connexion à la base de données
  */
 const testConnection = async () => {
+  let client;
   try {
-    const client = await pool.connect();
+    logger.info('🔄 Tentative de connexion à la base de données PostgreSQL (Neon)...');
+    
+    client = await pool.connect();
+    
     logger.info('✅ Connexion à la base de données PostgreSQL (Neon) établie');
     
     // Test simple
-    const result = await client.query('SELECT NOW()');
-    logger.debug('Test de connexion réussi', { time: result.rows[0].now });
+    const result = await client.query('SELECT NOW() as current_time, version() as pg_version');
     
-    client.release();
+    logger.info('✅ Test de connexion réussi', { 
+      time: result.rows[0].current_time,
+      version: result.rows[0].pg_version.split(' ')[0] + ' ' + result.rows[0].pg_version.split(' ')[1]
+    });
+    
   } catch (error) {
-    logger.error('❌ Erreur de connexion à la base de données PostgreSQL:', error);
+    logger.error('❌ Erreur de connexion à la base de données PostgreSQL:', {
+      message: error.message,
+      code: error.code,
+      host: process.env.PGHOST,
+      database: process.env.PGDATABASE,
+      stack: error.stack
+    });
+    
+    // Afficher des conseils de dépannage
+    logger.error('💡 Vérifiez que:');
+    logger.error('   1. La variable DATABASE_URL est correctement définie dans .env');
+    logger.error('   2. Votre base de données Neon est active (pas en pause)');
+    logger.error('   3. Les identifiants sont corrects');
+    logger.error('   4. Votre IP est autorisée dans les paramètres Neon');
+    
     process.exit(1);
+  } finally {
+    if (client) {
+      client.release();
+    }
   }
 };
 
@@ -106,16 +145,9 @@ testConnection();
 // EXPORT DU MODULE
 // ===============================
 
-/**
- * Export compatible avec l'interface MySQL2
- * Permet de minimiser les changements dans les services existants
- */
 module.exports = {
   /**
    * Exécute une requête préparée (compatible MySQL2)
-   * @param {string} sql - Requête SQL
-   * @param {Array} params - Paramètres de la requête
-   * @returns {Promise<Array>} - [rows, fields]
    */
   execute: async (sql, params = []) => {
     const client = await pool.connect();
@@ -126,6 +158,7 @@ module.exports = {
     } catch (error) {
       logger.error('Erreur lors de l\'exécution de la requête:', {
         error: error.message,
+        code: error.code,
         sql: sql.substring(0, 100)
       });
       throw error;
@@ -136,9 +169,6 @@ module.exports = {
 
   /**
    * Exécute une requête simple (compatible MySQL2)
-   * @param {string} sql - Requête SQL
-   * @param {Array} params - Paramètres de la requête
-   * @returns {Promise<Array>} - [rows, fields]
    */
   query: async (sql, params = []) => {
     const client = await pool.connect();
@@ -149,6 +179,7 @@ module.exports = {
     } catch (error) {
       logger.error('Erreur lors de l\'exécution de la requête:', {
         error: error.message,
+        code: error.code,
         sql: sql.substring(0, 100)
       });
       throw error;
@@ -159,14 +190,11 @@ module.exports = {
 
   /**
    * Obtient une connexion du pool
-   * @returns {Promise<Object>} - Client PostgreSQL wrappé pour compatibilité MySQL2
    */
   getConnection: async () => {
     const client = await pool.connect();
     
-    // Wrapper pour rendre le client compatible avec MySQL2
     return {
-      // Méthodes de transaction
       beginTransaction: async () => {
         await client.query('BEGIN');
       },
@@ -179,7 +207,6 @@ module.exports = {
         await client.query('ROLLBACK');
       },
       
-      // Méthodes de requête (compatibles MySQL2)
       execute: async (sql, params = []) => {
         const { sql: pgSql, params: pgParams } = convertMySQLToPostgreSQL(sql, params);
         const result = await client.query(pgSql, pgParams);
@@ -192,13 +219,11 @@ module.exports = {
         return formatResultForMySQL(result);
       },
       
-      // Libération de la connexion
       release: () => {
         client.release();
       }
     };
   },
 
-  // Pool direct pour des cas spéciaux
   pool
 };

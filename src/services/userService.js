@@ -1,16 +1,11 @@
 /**
- * Service utilisateur - STUB pour developpeur junior
+ * Service utilisateur - Compatible PostgreSQL (Neon)
  * 
- * Ce fichier contient des implementations minimales pour les operations utilisateur.
- * Le developpeur junior devra implementer la vraie logique avec la base de donnees.
- * 
- * TODO pour le developpeur junior:
- * - Connecter a la vraie base de donnees MySQL
- * - Implementer les requetes SQL
- * - Gerer les erreurs de base de donnees
- * - Ajouter la logique de creation automatique des comptes
- * - Implementer la gestion des roles (client, staff, admin)
+ * ✅ Corrigé pour PostgreSQL :
+ * - Utilisation de RETURNING au lieu de insertId
+ * - Gestion correcte du format de résultat PostgreSQL
  */
+
 // Format attendu : 
 // - 07 12 34 56 78 (10 chiffres commençant par 0)
 // - +225 07 12 34 56 78 (12 chiffres avec l'indicatif)
@@ -32,7 +27,7 @@ const findById = async (userId, includeOrders = false) => {
     console.log(`[userService] Exécution de la requête pour l'ID: ${userId}`);
     
     const [rows] = await db.execute(
-      'SELECT id, phone_number as phone_number, role, created_at as createdAt, updated_at as updatedAt FROM users WHERE id = ?',
+      'SELECT id, phone_number, role, created_at as "createdAt", updated_at as "updatedAt" FROM users WHERE id = ?',
       [userId]
     );
     
@@ -110,7 +105,7 @@ const findByPhoneNumber = async (phoneNumber, includeOrders = false) => {
     console.log(`[userService] Exécution de la requête pour le numéro: ${phoneNumber}`);
     
     const [rows] = await db.execute(
-      'SELECT id, phone_number as phone_number, role, created_at as createdAt, updated_at as updatedAt FROM users WHERE phone_number = ?',
+      'SELECT id, phone_number, role, created_at as "createdAt", updated_at as "updatedAt" FROM users WHERE phone_number = ?',
       [phoneNumber]
     );
     
@@ -174,6 +169,7 @@ const findByPhoneNumber = async (phoneNumber, includeOrders = false) => {
 
 /**
  * Créer un nouvel utilisateur
+ * ✅ Corrigé pour PostgreSQL avec RETURNING
  */
 const create = async (userData) => {
   console.log('[userService] Tentative de création d\'utilisateur avec les données:', userData);
@@ -206,26 +202,30 @@ const create = async (userData) => {
 
     if (existingUser.length > 0) {
       console.log(`[userService] Utilisateur existant trouvé avec l'ID: ${existingUser[0].id}`);
+      await connection.commit();
       return findById(existingUser[0].id);
     }
 
-    // Création de l'utilisateur
+    // ✅ Création de l'utilisateur avec RETURNING pour PostgreSQL
     console.log('[userService] Création du nouvel utilisateur avec le rôle:', role);
     const [result] = await connection.execute(
-      'INSERT INTO users (phone_number, role) VALUES (?, ?)',
+      'INSERT INTO users (phone_number, role) VALUES (?, ?) RETURNING id, phone_number, role, created_at, updated_at',
       [phoneNumber, role]
     );
 
-    if (!result || !result.insertId) {
-      console.error('[userService] Échec de la création - Aucun ID inséré');
+    // ✅ PostgreSQL retourne les données dans result directement (après conversion par notre wrapper)
+    if (!result || result.length === 0) {
+      console.error('[userService] Échec de la création - Aucune donnée retournée');
       throw new Error('Échec de la création de l\'utilisateur');
     }
 
-    console.log(`[userService] Utilisateur créé avec succès, ID: ${result.insertId}`);
+    const newUserId = result[0].id;
+    console.log(`[userService] Utilisateur créé avec succès, ID: ${newUserId}`);
+    
     await connection.commit();
     console.log('[userService] Transaction validée avec succès');
     
-    const newUser = await findById(result.insertId);
+    const newUser = await findById(newUserId);
     console.log('[userService] Détails du nouvel utilisateur:', newUser);
     return newUser;
 
@@ -247,9 +247,9 @@ const create = async (userData) => {
       }
     }
     
-    if (error.code === 'ER_DUP_ENTRY') {
+    // Si erreur de contrainte d'unicité (code PostgreSQL 23505)
+    if (error.code === '23505' || error.code === 'ER_DUP_ENTRY') {
       console.log('[userService] Conflit d\'unicité détecté, recherche de l\'utilisateur existant');
-      // Si une autre requête a créé l'utilisateur entre-temps
       return findByPhoneNumber(phoneNumber);
     }
     
