@@ -300,7 +300,7 @@ const findByPhoneNumber = async (phoneNumber) => {
         const [operators] = await db.query(`
             SELECT o.id, o.name, o.code 
             FROM operators o
-            WHERE JSON_CONTAINS(o.prefixes, JSON_QUOTE(?))
+            WHERE prefixes @> to_jsonb(?)
             LIMIT 1
         `, [prefix]);
 

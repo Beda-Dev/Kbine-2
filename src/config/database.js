@@ -1,140 +1,204 @@
 /**
- * Configuration de la connexion a la base de donnees MySQL
+ * Configuration de la connexion à la base de données PostgreSQL (Neon)
  * 
- * Ce fichier configure la connexion a MySQL en utilisant un pool de connexions.
- * Un pool permet de reutiliser les connexions et d'optimiser les performances.
+ * Ce fichier configure la connexion à PostgreSQL en utilisant un pool de connexions.
+ * Compatible avec Vercel et Neon Database.
  * 
- * Fonctionnalites:
- * - Pool de connexions reutilisables
+ * Fonctionnalités:
+ * - Pool de connexions réutilisables
  * - Configuration via variables d'environnement
- * - Test automatique de connexion au demarrage
+ * - Test automatique de connexion au démarrage
  * - Gestion des timeouts et limites
- * 
- * IMPORTANT: Ce fichier est importe dans app.js pour initialiser la DB
+ * - Compatible avec l'API MySQL2 pour minimiser les changements dans les services
  */
 
-// Import des modules necessaires
-const mysql = require('mysql2/promise'); // Driver MySQL avec support des Promises
-const logger = require('../utils/logger'); // Systeme de logs pour tracer les operations
+const { Pool } = require('pg');
+const logger = require('../utils/logger');
 
 // ===============================
-// CONFIGURATION DE LA BASE DE DONNEES
+// CONFIGURATION DE LA BASE DE DONNÉES
 // ===============================
 
 /**
- * Configuration du pool de connexions MySQL
+ * Configuration du pool de connexions PostgreSQL
  * 
- * Les valeurs par defaut correspondent a la configuration Docker
- * mais peuvent etre surchargees via les variables d'environnement
+ * Utilise les variables d'environnement de Neon/Vercel
+ * Compatible avec Vercel Serverless
  */
 const config = {
-  // ===== PARAMETRES DE CONNEXION =====
-  host: process.env.DB_HOST || 'kbine-mysql', // Nom du container MySQL
-  port: process.env.DB_PORT || 3306, // Port standard MySQL
-  user: process.env.DB_USER || 'kbine_user', // Utilisateur MySQL
-  password: process.env.DB_PASSWORD || 'kbine_password', // Mot de passe
-  database: process.env.DB_NAME || 'kbine_db', // Nom de la base de donnees
+  // Utiliser DATABASE_URL pour la connexion poolée (recommandé)
+  connectionString: process.env.DATABASE_URL || process.env.POSTGRES_URL,
   
-  // ===== PARAMETRES DU POOL =====
-  waitForConnections: true, // Attendre si toutes les connexions sont occupees
-  connectionLimit: 10, // Nombre maximum de connexions simultanees
-  queueLimit: 0, // Pas de limite sur la file d'attente (0 = illimite)
+  // Configuration du pool
+  max: 10, // Nombre maximum de connexions
+  idleTimeoutMillis: 30000, // Fermer les connexions inactives après 30s
+  connectionTimeoutMillis: 60000, // Timeout de connexion de 60s
   
-  // ===== PARAMETRES DE TIMEOUT (CORRIGES) =====
-  // CORRECTION: Utilisation des options valides pour mysql2
-  connectTimeout: 60000, // Timeout pour etablir la connexion (60 sec)
-  // Note: acquireTimeout et timeout ne sont pas des options valides pour mysql2
+  // SSL obligatoire pour Neon
+  ssl: {
+    rejectUnauthorized: false
+  }
 };
 
 // ===============================
-// CREATION DU POOL DE CONNEXIONS
+// CRÉATION DU POOL DE CONNEXIONS
+// ===============================
+
+const pool = new Pool(config);
+
+// Gestion des erreurs du pool
+pool.on('error', (err) => {
+  logger.error('Erreur inattendue sur le client PostgreSQL inactif', err);
+});
+
+// ===============================
+// WRAPPER POUR COMPATIBILITÉ MYSQL2
 // ===============================
 
 /**
- * Creation du pool de connexions MySQL
- * 
- * Le pool gere automatiquement:
- * - L'ouverture/fermeture des connexions
- * - La reutilisation des connexions existantes
- * - La limitation du nombre de connexions simultanees
- * - Les timeouts et la gestion des erreurs
+ * Convertit les requêtes MySQL (?) en requêtes PostgreSQL ($1, $2, etc.)
+ * @param {string} sql - Requête SQL avec placeholders MySQL
+ * @param {Array} params - Paramètres de la requête
+ * @returns {Object} - {sql, params} formatés pour PostgreSQL
  */
-const pool = mysql.createPool(config);
+const convertMySQLToPostgreSQL = (sql, params = []) => {
+  let paramIndex = 1;
+  const convertedSql = sql.replace(/\?/g, () => `$${paramIndex++}`);
+  return { sql: convertedSql, params };
+};
+
+/**
+ * Convertit les résultats PostgreSQL pour ressembler à MySQL2
+ * @param {Object} result - Résultat PostgreSQL
+ * @returns {Array} - Format [rows, fields] comme MySQL2
+ */
+const formatResultForMySQL = (result) => {
+  return [result.rows, result.fields || []];
+};
 
 // ===============================
-// TEST DE CONNEXION AU DEMARRAGE
+// TEST DE CONNEXION AU DÉMARRAGE
 // ===============================
 
 /**
- * Fonction de test de la connexion a la base de donnees
- * 
- * Cette fonction est executee au demarrage de l'application pour:
- * - Verifier que MySQL est accessible
- * - S'assurer que les credentials sont corrects
- * - Arreter l'application si la DB n'est pas disponible
- * 
- * IMPORTANT: L'application s'arrete si la connexion echoue
- * pour eviter de demarrer sans base de donnees
+ * Fonction de test de la connexion à la base de données
  */
 const testConnection = async () => {
   try {
-    // Tentative d'obtention d'une connexion du pool
-    const connection = await pool.getConnection();
+    const client = await pool.connect();
+    logger.info('✅ Connexion à la base de données PostgreSQL (Neon) établie');
     
-    // Log de succes
-    logger.info('Connexion a la base de donnees MySQL etablie');
+    // Test simple
+    const result = await client.query('SELECT NOW()');
+    logger.debug('Test de connexion réussi', { time: result.rows[0].now });
     
-    // Liberation immediate de la connexion
-    // Important: toujours liberer les connexions pour eviter les fuites
-    connection.release();
-    
+    client.release();
   } catch (error) {
-    // Log de l'erreur avec details
-    logger.error('Erreur de connexion a la base de donnees:', error);
-    
-    // Arret force de l'application
-    // process.exit(1) indique un arret anormal
+    logger.error('❌ Erreur de connexion à la base de données PostgreSQL:', error);
     process.exit(1);
   }
 };
 
-// Execution du test de connexion au chargement du module
-// Cela garantit que la DB est accessible avant de demarrer l'API
+// Exécution du test de connexion
 testConnection();
 
 // ===============================
-// EXPORT DU POOL
+// EXPORT DU MODULE
 // ===============================
 
 /**
- * Export d'un objet avec la méthode execute
- *
- * Cet objet sera utilise dans les contrôleurs pour executer les requêtes SQL
- *
- * Exemple d'utilisation dans un contrôleur:
- * const db = require('../config/database');
- * const [rows] = await db.execute('SELECT * FROM users WHERE id = ?', [userId]);
+ * Export compatible avec l'interface MySQL2
+ * Permet de minimiser les changements dans les services existants
  */
 module.exports = {
-    execute: async (sql, params) => {
-        const connection = await pool.getConnection();
-        try {
-            const result = await connection.execute(sql, params);
-            return result;
-        } finally {
-            connection.release();
-        }
-    },
-    query: async (sql, params) => {
-        const connection = await pool.getConnection();
-        try {
-            const result = await connection.query(sql, params);
-            return result;
-        } finally {
-            connection.release();
-        }
-    },
-    getConnection: async () => {
-        return await pool.getConnection();
+  /**
+   * Exécute une requête préparée (compatible MySQL2)
+   * @param {string} sql - Requête SQL
+   * @param {Array} params - Paramètres de la requête
+   * @returns {Promise<Array>} - [rows, fields]
+   */
+  execute: async (sql, params = []) => {
+    const client = await pool.connect();
+    try {
+      const { sql: pgSql, params: pgParams } = convertMySQLToPostgreSQL(sql, params);
+      const result = await client.query(pgSql, pgParams);
+      return formatResultForMySQL(result);
+    } catch (error) {
+      logger.error('Erreur lors de l\'exécution de la requête:', {
+        error: error.message,
+        sql: sql.substring(0, 100)
+      });
+      throw error;
+    } finally {
+      client.release();
     }
+  },
+
+  /**
+   * Exécute une requête simple (compatible MySQL2)
+   * @param {string} sql - Requête SQL
+   * @param {Array} params - Paramètres de la requête
+   * @returns {Promise<Array>} - [rows, fields]
+   */
+  query: async (sql, params = []) => {
+    const client = await pool.connect();
+    try {
+      const { sql: pgSql, params: pgParams } = convertMySQLToPostgreSQL(sql, params);
+      const result = await client.query(pgSql, pgParams);
+      return formatResultForMySQL(result);
+    } catch (error) {
+      logger.error('Erreur lors de l\'exécution de la requête:', {
+        error: error.message,
+        sql: sql.substring(0, 100)
+      });
+      throw error;
+    } finally {
+      client.release();
+    }
+  },
+
+  /**
+   * Obtient une connexion du pool
+   * @returns {Promise<Object>} - Client PostgreSQL wrappé pour compatibilité MySQL2
+   */
+  getConnection: async () => {
+    const client = await pool.connect();
+    
+    // Wrapper pour rendre le client compatible avec MySQL2
+    return {
+      // Méthodes de transaction
+      beginTransaction: async () => {
+        await client.query('BEGIN');
+      },
+      
+      commit: async () => {
+        await client.query('COMMIT');
+      },
+      
+      rollback: async () => {
+        await client.query('ROLLBACK');
+      },
+      
+      // Méthodes de requête (compatibles MySQL2)
+      execute: async (sql, params = []) => {
+        const { sql: pgSql, params: pgParams } = convertMySQLToPostgreSQL(sql, params);
+        const result = await client.query(pgSql, pgParams);
+        return formatResultForMySQL(result);
+      },
+      
+      query: async (sql, params = []) => {
+        const { sql: pgSql, params: pgParams } = convertMySQLToPostgreSQL(sql, params);
+        const result = await client.query(pgSql, pgParams);
+        return formatResultForMySQL(result);
+      },
+      
+      // Libération de la connexion
+      release: () => {
+        client.release();
+      }
+    };
+  },
+
+  // Pool direct pour des cas spéciaux
+  pool
 };
