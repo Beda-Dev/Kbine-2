@@ -15,6 +15,7 @@ require('dotenv').config();
 /**
  * Configuration du pool de connexions PostgreSQL
  */
+console.log(process.env.DATABASE_URL);
 const config = {
   // Utiliser DATABASE_URL pour la connexion poolée (recommandé pour Neon)
   connectionString: process.env.DATABASE_URL || process.env.POSTGRES_URL,
@@ -38,21 +39,38 @@ logger.info('Configuration PostgreSQL:', {
   ssl: 'enabled',
   poolSize: config.max
 });
+console.log('Configuration PostgreSQL:', {
+  host: process.env.PGHOST,
+  database: process.env.PGDATABASE,
+  user: process.env.PGUSER,
+  ssl: 'enabled',
+  poolSize: config.max
+});
 
+console.log("Vérification que DATABASE_URL est définie....")
 // Vérification que DATABASE_URL est définie
 if (!config.connectionString) {
   logger.error('❌ DATABASE_URL ou POSTGRES_URL n\'est pas définie dans les variables d\'environnement');
+  console.log("DATABASE_URL ou POSTGRES_URL n'est pas définie dans les variables d'environnement");
   process.exit(1);
 }
 
 // ===============================
 // CRÉATION DU POOL DE CONNEXIONS
 // ===============================
+console.log("Création du pool de connexions....")
 
 const pool = new Pool(config);
 
+console.log("Pool de connexions créé avec succès....")
+
 // Gestion des erreurs du pool
 pool.on('error', (err) => {
+  console.log("Erreur inattendue sur le client PostgreSQL inactif", {
+    error: err.message,
+    code: err.code,
+    stack: err.stack
+  })
   logger.error('Erreur inattendue sur le client PostgreSQL inactif', {
     error: err.message,
     code: err.code,
@@ -62,11 +80,13 @@ pool.on('error', (err) => {
 
 // Log des connexions réussies
 pool.on('connect', () => {
+  console.log("Nouvelle connexion PostgreSQL établie")
   logger.debug('Nouvelle connexion PostgreSQL établie');
 });
 
 // Log des connexions retirées du pool
 pool.on('remove', () => {
+  console.log("Connexion PostgreSQL retirée du pool")
   logger.debug('Connexion PostgreSQL retirée du pool');
 });
 
@@ -101,10 +121,12 @@ const testConnection = async () => {
   let client;
   try {
     logger.info('🔄 Tentative de connexion à la base de données PostgreSQL (Neon)...');
+    console.log("Tentative de connexion à la base de données PostgreSQL (Neon)...")
     
     client = await pool.connect();
     
     logger.info('✅ Connexion à la base de données PostgreSQL (Neon) établie');
+    console.log("Connexion à la base de données PostgreSQL (Neon) établie")
     
     // Test simple
     const result = await client.query('SELECT NOW() as current_time, version() as pg_version');
@@ -122,6 +144,13 @@ const testConnection = async () => {
       database: process.env.PGDATABASE,
       stack: error.stack
     });
+    console.log("Erreur de connexion à la base de données PostgreSQL:", {
+      message: error.message,
+      code: error.code,
+      host: process.env.PGHOST,
+      database: process.env.PGDATABASE,
+      stack: error.stack
+    })
     
     // Afficher des conseils de dépannage
     logger.error('💡 Vérifiez que:');
