@@ -47,14 +47,14 @@ const login = async (req, res) => {
       try {
         // Création d'un nouvel utilisateur
         user = await userService.create({
-          phoneNumber: phoneNumber,
+          phone_number: phoneNumber,
           role: 'client'
         });
         isNewUser = true;
 
         logger.info('Nouvel utilisateur créé lors du login', {
-          userId: user.id,
-          phoneNumber: user.phone_number
+          user_id: user.id,
+          phone_number: user.phone_number
         });
 
       } catch (error) {
@@ -69,8 +69,8 @@ const login = async (req, res) => {
 
     } else {
       logger.info('Utilisateur existant connecté', {
-        userId: user.id,
-        phoneNumber: user.phone_number
+        user_id: user.id,
+        phone_number: user.phone_number
       });
     }
 
@@ -102,18 +102,22 @@ const login = async (req, res) => {
       token: token,
       // refreshToken: refreshToken,
       user: {
-        id: user.id,
-        phoneNumber: user.phone_number,
-        role: user.role
+        user_id: user.id,
+        phone_number: user.phone_number,
+        role: user.role,
+        created_at: user.createdAt || user.created_at, // ← AJOUT
+        updated_at: user.updatedAt || user.updated_at  // ← AJOUT
       },
       // isNewUser: isNewUser
     };
     
     console.log('Réponse de connexion préparée:', {
-      userId: user.id,
-      phoneNumber: user.phone_number,
+      user_id: user.id,
+      phone_number: user.phone_number,
       role: user.role,
-      isNewUser: isNewUser
+      isNewUser: isNewUser,
+              created_at: user.createdAt || user.created_at, // ← AJOUT
+        updated_at: user.updatedAt || user.updated_at  // ← AJOUT
     });
     
     return res.status(200).json(responseData);

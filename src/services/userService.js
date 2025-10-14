@@ -174,9 +174,9 @@ const findByPhoneNumber = async (phoneNumber, includeOrders = false) => {
 const create = async (userData) => {
   console.log('[userService] Tentative de création d\'utilisateur avec les données:', userData);
   
-  const { phoneNumber, role = 'client' } = userData || {};
+  const { phone_number, role = 'client' } = userData || {};
 
-  if (!phoneNumber || !PHONE_NUMBER_REGEX.test(phoneNumber)) {
+  if (!phone_number || !PHONE_NUMBER_REGEX.test(phone_number)) {
     console.error('[userService] Numéro de téléphone invalide pour la création:', phoneNumber);
     throw new Error('Numéro de téléphone invalide');
   }
@@ -194,10 +194,10 @@ const create = async (userData) => {
     await connection.beginTransaction();
 
     // Vérifier l'existence de l'utilisateur dans la même transaction
-    console.log(`[userService] Vérification de l'existence du numéro: ${phoneNumber}`);
+    console.log(`[userService] Vérification de l'existence du numéro: ${phone_number}`);
     const [existingUser] = await connection.execute(
       'SELECT id FROM users WHERE phone_number = ? FOR UPDATE',
-      [phoneNumber]
+      [phone_number]
     );
 
     if (existingUser.length > 0) {
@@ -210,7 +210,7 @@ const create = async (userData) => {
     console.log('[userService] Création du nouvel utilisateur avec le rôle:', role);
     const [result] = await connection.execute(
       'INSERT INTO users (phone_number, role) VALUES (?, ?) RETURNING id, phone_number, role, created_at, updated_at',
-      [phoneNumber, role]
+      [phone_number, role]
     );
 
     // ✅ PostgreSQL retourne les données dans result directement (après conversion par notre wrapper)
@@ -234,7 +234,7 @@ const create = async (userData) => {
       error: error.message,
       code: error.code,
       stack: error.stack,
-      phoneNumber: phoneNumber,
+      phone_number: phone_number,
       role: role
     });
     
@@ -250,7 +250,7 @@ const create = async (userData) => {
     // Si erreur de contrainte d'unicité (code PostgreSQL 23505)
     if (error.code === '23505' || error.code === 'ER_DUP_ENTRY') {
       console.log('[userService] Conflit d\'unicité détecté, recherche de l\'utilisateur existant');
-      return findByPhoneNumber(phoneNumber);
+      return findByPhoneNumber(phone_number);
     }
     
     throw new Error(`Erreur lors de la création de l'utilisateur: ${error.message}`);
