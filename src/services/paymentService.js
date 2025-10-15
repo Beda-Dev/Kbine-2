@@ -58,6 +58,7 @@ const createPayment = async (paymentData) => {
         );
 
         if (existingPayment.length > 0) {
+            console.log('[PaymentService] createPayment - Paiement existant', existingPayment);
             throw new Error('Une transaction avec cette référence existe déjà');
         }
 
@@ -68,6 +69,7 @@ const createPayment = async (paymentData) => {
         );
 
         if (!orderResults || orderResults.length === 0) {
+            console.log('[PaymentService] createPayment - Commande non trouvée', orderResults);
             throw new Error('Commande non trouvée');
         }
 
@@ -76,6 +78,7 @@ const createPayment = async (paymentData) => {
             order_id: paymentData.order_id,
             amount: paymentData.amount,
             payment_method: paymentData.payment_method,
+            payment_phone: paymentData.payment_phone || null, // NOUVEAU CHAMP
             payment_reference: paymentData.payment_reference,
             external_reference: paymentData.external_reference || Date.now().toString(),
             status: 'pending',
@@ -123,6 +126,7 @@ const updatePayment = async (id, updateData) => {
         const [payments] = await connection.query('SELECT * FROM payments WHERE id = ?', [id]);
 
         if (!payments || payments.length === 0) {
+            console.log('[PaymentService] updatePayment - Paiement non trouvé', { paymentId: id });
             throw new Error('Paiement non trouvé');
         }
 

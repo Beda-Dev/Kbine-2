@@ -5,30 +5,24 @@ const createOrder = async (orderData) => {
     logger.info('[OrderService] Création d\'une nouvelle commande', {
         userId: orderData.user_id,
         planId: orderData.plan_id,
-        phoneNumber: orderData.phone_number,
-        amount: orderData.amount,
-        paymentMethod: orderData.payment_method
+        amount: orderData.amount
     });
+    console.log("orderData", orderData);
 
     try {
         // Définir le statut par défaut si non fourni
         const status = orderData.status || 'pending';
 
-        // Définir payment_reference comme NULL si non fourni
-        const paymentReference = orderData.payment_reference || null;
-
         const [result] = await db.execute(
             `INSERT INTO orders 
-            (user_id, plan_id, phone_number, amount, status, payment_method, payment_reference) 
-            VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            (user_id, plan_id, amount, status, assigned_to) 
+            VALUES (?, ?, ?, ?, ?)`,
             [
                 orderData.user_id,
                 orderData.plan_id,
-                orderData.phone_number,
                 orderData.amount,
                 status,
-                orderData.payment_method,
-                paymentReference
+                orderData.assigned_to || null
             ]
         );
 

@@ -37,6 +37,15 @@ const paymentSchema = Joi.object({
             'any.only': 'Méthode de paiement non valide',
             'any.required': 'La méthode de paiement est obligatoire'
         }),
+
+    payment_phone: Joi.string() // NOUVEAU CHAMP
+        .pattern(/^0[0-9]{9}$/)
+        .optional()
+        .messages({
+            'string.base': 'Le numéro de téléphone de paiement doit être une chaîne de caractères',
+            'string.pattern.base': 'Le numéro de téléphone doit être un numéro ivoirien valide'
+        }),
+        
     
     payment_reference: Joi.string()
         .required()

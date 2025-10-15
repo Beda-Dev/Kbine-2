@@ -50,11 +50,11 @@ const planSchema = Joi.object({
         }),
 
     type: Joi.string()
-        .valid('credit', 'minutes', 'internet')
+        .valid('credit', 'minutes', 'internet', 'mixte') // AJOUT DE 'mixte'
         .required()
         .messages({
             'string.base': 'Le type doit être une chaîne de caractères',
-            'any.only': 'Type de plan invalide. Doit être \'credit\', \'minutes\' ou \'internet\'',
+            'any.only': 'Type de plan invalide. Doit être \'credit\', \'minutes\', \'internet\' ou \'mixte\'',
             'any.required': 'Le type de plan est obligatoire'
         }),
 

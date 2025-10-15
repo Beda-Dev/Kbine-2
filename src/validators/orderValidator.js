@@ -8,6 +8,7 @@ const ORDER_STATUS = ['pending', 'assigned', 'processing', 'completed', 'cancell
 const PAYMENT_METHODS = ['wave', 'orange_money', 'mtn_money', 'moov_money'];
 
 // Schéma de base pour une commande
+
 const orderSchema = Joi.object({
     plan_id: Joi.number()
         .integer()
@@ -20,15 +21,6 @@ const orderSchema = Joi.object({
             'any.required': "L'ID du forfait est obligatoire"
         }),
         
-    phone_number: Joi.string()
-        .pattern(/^0[0-9]{9}$/)
-        .required()
-        .messages({
-            'string.pattern.base': 'Le numéro de téléphone doit être un numéro ivoirien valide (10 chiffres commençant par 0)',
-            'any.required': 'Le numéro de téléphone est obligatoire',
-            'string.empty': 'Le numéro de téléphone ne peut pas être vide'
-        }),
-        
     amount: Joi.number()
         .positive()
         .precision(2)
@@ -38,21 +30,6 @@ const orderSchema = Joi.object({
             'number.positive': 'Le montant doit être un nombre positif',
             'number.precision': 'Le montant doit avoir au maximum 2 décimales',
             'any.required': 'Le montant est obligatoire'
-        }),
-        
-    payment_method: Joi.string()
-        .valid(...PAYMENT_METHODS)
-        .required()
-        .messages({
-            'string.base': 'La méthode de paiement doit être une chaîne de caractères',
-            'any.only': `La méthode de paiement doit être l'une des suivantes: ${PAYMENT_METHODS.join(', ')}`,
-            'any.required': 'La méthode de paiement est obligatoire'
-        }),
-    
-    payment_reference: Joi.string()
-        .allow('', null)
-        .messages({
-            'string.base': 'La référence de paiement doit être une chaîne de caractères'
         })
 });
 
@@ -80,13 +57,6 @@ const updateOrderValidation = (data) => {
                 'number.positive': "L'ID du forfait doit être un nombre positif"
             }),
         
-        phone_number: Joi.string()
-            .pattern(/^0[0-9]{9}$/)
-            .messages({
-                'string.pattern.base': 'Le numéro de téléphone doit être un numéro ivoirien valide (10 chiffres commençant par 0)',
-                'string.empty': 'Le numéro de téléphone ne peut pas être vide'
-            }),
-        
         amount: Joi.number()
             .positive()
             .precision(2)
@@ -96,24 +66,12 @@ const updateOrderValidation = (data) => {
                 'number.precision': 'Le montant doit avoir au maximum 2 décimales'
             }),
         
+        
         status: Joi.string()
             .valid(...ORDER_STATUS)
             .messages({
                 'string.base': 'Le statut doit être une chaîne de caractères',
                 'any.only': `Le statut doit être l'un des suivants: ${ORDER_STATUS.join(', ')}`
-            }),
-        
-        payment_method: Joi.string()
-            .valid(...PAYMENT_METHODS)
-            .messages({
-                'string.base': 'La méthode de paiement doit être une chaîne de caractères',
-                'any.only': `La méthode de paiement doit être l'une des suivantes: ${PAYMENT_METHODS.join(', ')}`
-            }),
-        
-        payment_reference: Joi.string()
-            .allow('', null)
-            .messages({
-                'string.base': 'La référence de paiement doit être une chaîne de caractères'
             }),
         
         assigned_to: Joi.number()
@@ -125,6 +83,7 @@ const updateOrderValidation = (data) => {
                 'number.integer': "L'ID de l'utilisateur assigné doit être un entier",
                 'number.positive': "L'ID de l'utilisateur assigné doit être un nombre positif"
             })
+        
     })
     .min(1)
     .messages({
