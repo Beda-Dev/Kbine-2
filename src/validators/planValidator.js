@@ -131,10 +131,10 @@ const updatePlanValidation = (data) => {
             }),
 
         type: Joi.string()
-            .valid('credit', 'minutes', 'internet')
+            .valid('credit', 'minutes', 'internet' , 'mixte')
             .messages({
                 'string.base': 'Le type doit être une chaîne de caractères',
-                'any.only': 'Type de plan invalide. Doit être \'credit\', \'minutes\' ou \'internet\''
+                'any.only': 'Type de plan invalide. Doit être \'credit\', \'minutes\' ou \'internet\' ou \'mixte\''
             }),
 
         validity_days: Joi.number()
