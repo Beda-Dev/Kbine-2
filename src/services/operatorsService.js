@@ -163,7 +163,8 @@ const update = async (operatorId, operatorData) => {
         
         const [result] = await db.execute(query, params);
         
-        if (result.length === 0) {
+        // CORRECTION : Vérifier rowCount au lieu de result.length
+        if (result.rowCount === 0) {
             throw new Error('Opérateur non trouvé');
         }
         
@@ -186,7 +187,8 @@ const deleteById = async (operatorId) => {
     try {
         const [result] = await db.execute('DELETE FROM operators WHERE id = $1', [operatorId]);
         
-        if (result.length === 0) {
+        // CORRECTION : Vérifier rowCount au lieu de result.length
+        if (result.rowCount === 0) {
             throw new Error('Opérateur non trouvé');
         }
         

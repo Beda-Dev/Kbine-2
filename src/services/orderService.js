@@ -104,7 +104,7 @@ const findById = async (orderId) => {
              LEFT JOIN plans p ON o.plan_id = p.id
              LEFT JOIN operators op ON p.operator_id = op.id
              LEFT JOIN users au ON o.assigned_to = au.id
-             WHERE o.id = ?`,
+              WHERE o.id = $1`,  // CORRECTION : ? -> $1
             [orderId]
         );
 
@@ -307,53 +307,50 @@ const findAll = async (filters = {}) => {
 
 const updateOrder = async (orderId, orderData) => {
     console.log('[OrderService] [updateOrder] Début de mise à jour', { orderId, orderData });
-    logger.info(`[OrderService] Mise à jour de la commande ${orderId}`, {
-        orderId,
-        updateData: orderData
-    });
 
     try {
         // Construire dynamiquement la requête UPDATE
         const fields = [];
         const params = [];
+        let paramIndex = 1; // CORRECTION : Ajouter un compteur pour PostgreSQL
 
         if (orderData.user_id !== undefined) {
-            fields.push('user_id = ?');
+            fields.push(`user_id = $${paramIndex++}`); // CORRECTION : ? -> $1, $2, etc.
             params.push(orderData.user_id);
             console.log('[OrderService] [updateOrder] Ajout user_id à la mise à jour');
         }
         if (orderData.plan_id !== undefined) {
-            fields.push('plan_id = ?');
+            fields.push(`plan_id = $${paramIndex++}`);
             params.push(orderData.plan_id);
             console.log('[OrderService] [updateOrder] Ajout plan_id à la mise à jour');
         }
         if (orderData.phone_number !== undefined) {
-            fields.push('phone_number = ?');
+            fields.push(`phone_number = $${paramIndex++}`);
             params.push(orderData.phone_number);
             console.log('[OrderService] [updateOrder] Ajout phone_number à la mise à jour');
         }
         if (orderData.amount !== undefined) {
-            fields.push('amount = ?');
+            fields.push(`amount = $${paramIndex++}`);
             params.push(orderData.amount);
             console.log('[OrderService] [updateOrder] Ajout amount à la mise à jour');
         }
         if (orderData.status !== undefined) {
-            fields.push('status = ?');
+            fields.push(`status = $${paramIndex++}`);
             params.push(orderData.status);
             console.log('[OrderService] [updateOrder] Ajout status à la mise à jour');
         }
         if (orderData.payment_method !== undefined) {
-            fields.push('payment_method = ?');
+            fields.push(`payment_method = $${paramIndex++}`);
             params.push(orderData.payment_method);
             console.log('[OrderService] [updateOrder] Ajout payment_method à la mise à jour');
         }
         if (orderData.payment_reference !== undefined) {
-            fields.push('payment_reference = ?');
+            fields.push(`payment_reference = $${paramIndex++}`);
             params.push(orderData.payment_reference);
             console.log('[OrderService] [updateOrder] Ajout payment_reference à la mise à jour');
         }
         if (orderData.assigned_to !== undefined) {
-            fields.push('assigned_to = ?');
+            fields.push(`assigned_to = $${paramIndex++}`);
             params.push(orderData.assigned_to);
             console.log('[OrderService] [updateOrder] Ajout assigned_to à la mise à jour');
         }
@@ -363,10 +360,10 @@ const updateOrder = async (orderId, orderData) => {
             throw new Error('Aucun champ à mettre à jour');
         }
 
-        fields.push('updated_at = NOW()');
+        fields.push(`updated_at = NOW()`); // CORRECTION : Pas de paramètre pour NOW()
         params.push(orderId);
 
-        const query = `UPDATE orders SET ${fields.join(', ')} WHERE id = ?`;
+        const query = `UPDATE orders SET ${fields.join(', ')} WHERE id = $${paramIndex}`;
         console.log('[OrderService] [updateOrder] Requête UPDATE construite', { query, params });
 
         console.log('[OrderService] [updateOrder] Exécution requête UPDATE');
@@ -374,16 +371,11 @@ const updateOrder = async (orderId, orderData) => {
 
         console.log('[OrderService] [updateOrder] Résultat de la mise à jour', {
             orderId,
-            affectedRows: result.affectedRows,
-            changedRows: result.changedRows
-        });
-        logger.debug('[OrderService] Résultat de la mise à jour', {
-            orderId,
-            affectedRows: result.affectedRows,
-            changedRows: result.changedRows
+            rowCount: result.rowCount // CORRECTION : Utiliser rowCount
         });
 
-        if (result.affectedRows === 0) {
+        // CORRECTION : Vérifier rowCount au lieu de affectedRows
+        if (result.rowCount === 0) {
             const error = new Error(`Commande non trouvée: ${orderId}`);
             console.log('[OrderService] [updateOrder] Commande non trouvée', { orderId });
             logger.warn(`[OrderService] ${error.message}`);
