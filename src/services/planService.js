@@ -342,6 +342,9 @@ const findByPhoneNumber = async (phoneNumber) => {
 /**
  * Met à jour un plan existant
  */
+/**
+ * Met à jour un plan existant
+ */
 const update = async (planId, planData) => {
   const context = "[PlanService] [update]";
   console.log(`${context} Début de mise à jour de plan`, {
@@ -358,6 +361,7 @@ const update = async (planId, planData) => {
     const params = [];
     let paramIndex = 1;
 
+    // Vérifier l'existence de l'opérateur si operator_id est fourni
     if (planData.operator_id !== undefined) {
       const [operators] = await db.execute(
         "SELECT id FROM operators WHERE id = $1",
@@ -409,9 +413,17 @@ const update = async (planId, planData) => {
     params.push(planId);
     const query = `UPDATE plans SET ${updates.join(", ")} WHERE id = $${paramIndex}`;
 
+    console.log(`${context} Exécution de la requête UPDATE`, { query, params });
     const [result] = await db.execute(query, params);
 
-    if (result.length === 0) {
+    // CORRECTION : Dans PostgreSQL, on vérifie rowCount au lieu de result.length
+    console.log(`${context} Résultat de l'UPDATE`, { 
+      rowCount: result.rowCount,
+      hasRows: result.rows && result.rows.length > 0 
+    });
+
+    // Vérifier si des lignes ont été affectées
+    if (result.rowCount === 0) {
       throw new Error("Plan non trouvé");
     }
 
@@ -435,6 +447,9 @@ const update = async (planId, planData) => {
 /**
  * Supprime un plan par son ID
  */
+/**
+ * Supprime un plan par son ID
+ */
 const deleteById = async (planId) => {
   const context = "[PlanService] [deleteById]";
   console.log(`${context} Début de suppression de plan`, { planId });
@@ -444,17 +459,25 @@ const deleteById = async (planId) => {
       throw new Error("ID du plan invalide");
     }
 
+    // Vérifier que le plan existe
     const plan = await findById(planId);
     if (!plan) {
       throw new Error("Plan non trouvé");
     }
 
+    console.log(`${context} Exécution de la requête DELETE`);
     const [result] = await db.execute("DELETE FROM plans WHERE id = $1", [
       planId,
     ]);
 
-    if (result.length === 0) {
-      throw new Error("Plan non trouvé");
+    console.log(`${context} Résultat de la suppression`, { 
+      rowCount: result.rowCount,
+      hasRows: result.rows && result.rows.length > 0 
+    });
+
+    // CORRECTION : Vérifier rowCount au lieu de result.length
+    if (result.rowCount === 0) {
+      throw new Error("Aucune ligne supprimée - Plan non trouvé");
     }
 
     logger.info(`${context} Plan supprimé avec succès`, { planId });
