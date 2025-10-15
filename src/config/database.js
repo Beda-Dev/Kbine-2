@@ -19,12 +19,12 @@ console.log(process.env.DATABASE_URL);
 const config = {
   // Utiliser DATABASE_URL pour la connexion poolée (recommandé pour Neon)
   connectionString: process.env.DATABASE_URL || process.env.POSTGRES_URL,
-  
+
   // Configuration du pool
   max: 10, // Nombre maximum de connexions
   idleTimeoutMillis: 30000, // Fermer les connexions inactives après 30s
   connectionTimeoutMillis: 10000, // Timeout de connexion réduit à 10s pour détecter les erreurs plus vite
-  
+
   // SSL OBLIGATOIRE pour Neon - Configuration corrigée
   ssl: {
     rejectUnauthorized: false // Nécessaire pour Neon
@@ -122,20 +122,20 @@ const testConnection = async () => {
   try {
     logger.info('🔄 Tentative de connexion à la base de données PostgreSQL (Neon)...');
     console.log("Tentative de connexion à la base de données PostgreSQL (Neon)...")
-    
+
     client = await pool.connect();
-    
+
     logger.info('✅ Connexion à la base de données PostgreSQL (Neon) établie');
     console.log("Connexion à la base de données PostgreSQL (Neon) établie")
-    
+
     // Test simple
     const result = await client.query('SELECT NOW() as current_time, version() as pg_version');
-    
-    logger.info('✅ Test de connexion réussi', { 
+
+    logger.info('✅ Test de connexion réussi', {
       time: result.rows[0].current_time,
       version: result.rows[0].pg_version.split(' ')[0] + ' ' + result.rows[0].pg_version.split(' ')[1]
     });
-    
+
   } catch (error) {
     logger.error('❌ Erreur de connexion à la base de données PostgreSQL:', {
       message: error.message,
@@ -151,14 +151,14 @@ const testConnection = async () => {
       database: process.env.PGDATABASE,
       stack: error.stack
     })
-    
+
     // Afficher des conseils de dépannage
     logger.error('💡 Vérifiez que:');
     logger.error('   1. La variable DATABASE_URL est correctement définie dans .env');
     logger.error('   2. Votre base de données Neon est active (pas en pause)');
     logger.error('   3. Les identifiants sont corrects');
     logger.error('   4. Votre IP est autorisée dans les paramètres Neon');
-    
+
     process.exit(1);
   } finally {
     if (client) {
@@ -183,6 +183,12 @@ module.exports = {
     try {
       const { sql: pgSql, params: pgParams } = convertMySQLToPostgreSQL(sql, params);
       const result = await client.query(pgSql, pgParams);
+      console.log('[Database] Structure du résultat:', {
+        rawResult: result,
+        rows: result.rows,
+        rowCount: result.rows ? result.rows.length : 0,
+        fields: result.fields
+      });
       return formatResultForMySQL(result);
     } catch (error) {
       logger.error('Erreur lors de l\'exécution de la requête:', {
@@ -222,32 +228,32 @@ module.exports = {
    */
   getConnection: async () => {
     const client = await pool.connect();
-    
+
     return {
       beginTransaction: async () => {
         await client.query('BEGIN');
       },
-      
+
       commit: async () => {
         await client.query('COMMIT');
       },
-      
+
       rollback: async () => {
         await client.query('ROLLBACK');
       },
-      
+
       execute: async (sql, params = []) => {
         const { sql: pgSql, params: pgParams } = convertMySQLToPostgreSQL(sql, params);
         const result = await client.query(pgSql, pgParams);
         return formatResultForMySQL(result);
       },
-      
+
       query: async (sql, params = []) => {
         const { sql: pgSql, params: pgParams } = convertMySQLToPostgreSQL(sql, params);
         const result = await client.query(pgSql, pgParams);
         return formatResultForMySQL(result);
       },
-      
+
       release: () => {
         client.release();
       }
