@@ -10,13 +10,11 @@ const createOrder = async (orderData) => {
     });
 
     try {
-        // Définir le statut par défaut si non fourni
         const status = orderData.status || 'pending';
         console.log('[OrderService] [createOrder] Statut défini', { status });
 
         console.log('[OrderService] [createOrder] Exécution requête INSERT');
         
-        // CORRECTION : Utiliser la syntaxe PostgreSQL correcte
         const query = `
             INSERT INTO orders 
             (user_id, plan_id, amount, status, assigned_to, created_at, updated_at)
@@ -42,7 +40,6 @@ const createOrder = async (orderData) => {
             firstRow: result[0] && result[0][0] ? result[0][0] : 'no first row'
         });
 
-        // CORRECTION : Récupérer l'ID correctement depuis le résultat PostgreSQL
         const insertId = result[0] && result[0][0] ? result[0][0].id : null;
         console.log('[OrderService] [createOrder] ID généré récupéré', { insertId });
         
@@ -104,7 +101,7 @@ const findById = async (orderId) => {
              LEFT JOIN plans p ON o.plan_id = p.id
              LEFT JOIN operators op ON p.operator_id = op.id
              LEFT JOIN users au ON o.assigned_to = au.id
-              WHERE o.id = $1`,  // CORRECTION : ? -> $1
+              WHERE o.id = $1`,
             [orderId]
         );
 
@@ -144,15 +141,13 @@ const findById = async (orderId) => {
                 validity_days: order.plan_validity_days,
                 active: order.plan_active,
                 created_at: order.plan_created_at
-                // operator_name: order.operator_name,
-                // operator_code: order.operator_code
             };
             console.log('[OrderService] [findById] Plan associé ajouté');
         }
 
         // Ajouter l'utilisateur assigné
         if (order.assigned_to) {
-            result.assigned = {
+            result.assigned_staff = {
                 id: order.assigned_to,
                 phone_number: order.assigned_phone,
                 role: order.assigned_role,
@@ -160,6 +155,35 @@ const findById = async (orderId) => {
                 updated_at: order.assigned_updated
             };
             console.log('[OrderService] [findById] Utilisateur assigné ajouté');
+        }
+
+        // 🆕 RÉCUPÉRER LES PAIEMENTS ASSOCIÉS
+        console.log('[OrderService] [findById] Récupération des paiements associés');
+        const [payments] = await db.execute(
+            `SELECT id, amount, payment_method, payment_phone, payment_reference, 
+                    external_reference, status, callback_data, created_at, updated_at
+             FROM payments 
+             WHERE order_id = $1 
+             ORDER BY created_at DESC`,
+            [orderId]
+        );
+
+        if (payments && payments.length > 0) {
+            result.payments = payments.map(payment => {
+                // Parser callback_data si c'est une chaîne JSON
+                if (payment.callback_data && typeof payment.callback_data === 'string') {
+                    try {
+                        payment.callback_data = JSON.parse(payment.callback_data);
+                    } catch (e) {
+                        console.log('[OrderService] [findById] Erreur parsing callback_data', e.message);
+                    }
+                }
+                return payment;
+            });
+            console.log('[OrderService] [findById] Paiements associés ajoutés', { paymentCount: payments.length });
+        } else {
+            result.payments = [];
+            console.log('[OrderService] [findById] Aucun paiement associé');
         }
 
         // Supprimer les champs inutiles
@@ -209,14 +233,15 @@ const findAll = async (filters = {}) => {
 
         const params = [];
         const conditions = [];
+        let paramIndex = 1;
 
         // Ajout des filtres optionnels
         if (filters.userId) {
-            conditions.push('o.user_id = ?');
+            conditions.push(`o.user_id = $${paramIndex++}`);
             params.push(filters.userId);
         }
         if (filters.status) {
-            conditions.push('o.status = ?');
+            conditions.push(`o.status = $${paramIndex++}`);
             params.push(filters.status);
         }
 
@@ -229,6 +254,42 @@ const findAll = async (filters = {}) => {
         console.log('[OrderService] [findAll] Requête construite', { query, params });
         const [rows] = await db.execute(query, params);
         console.log('[OrderService] [findAll] Résultats obtenus', { rowCount: rows.length });
+
+        // Récupérer tous les IDs de commandes pour charger les paiements
+        const orderIds = rows.map(r => r.id);
+        let paymentsMap = {};
+
+        if (orderIds.length > 0) {
+            console.log('[OrderService] [findAll] Récupération des paiements pour toutes les commandes');
+            const placeholders = orderIds.map((_, idx) => `$${idx + 1}`).join(',');
+            const [allPayments] = await db.execute(
+                `SELECT id, order_id, amount, payment_method, payment_phone, payment_reference, 
+                        external_reference, status, callback_data, created_at, updated_at
+                 FROM payments 
+                 WHERE order_id IN (${placeholders})
+                 ORDER BY created_at DESC`,
+                orderIds
+            );
+
+            // Grouper les paiements par order_id
+            allPayments.forEach(payment => {
+                if (!paymentsMap[payment.order_id]) {
+                    paymentsMap[payment.order_id] = [];
+                }
+                // Parser callback_data
+                if (payment.callback_data && typeof payment.callback_data === 'string') {
+                    try {
+                        payment.callback_data = JSON.parse(payment.callback_data);
+                    } catch (e) {
+                        console.log('[OrderService] [findAll] Erreur parsing callback_data', e.message);
+                    }
+                }
+                paymentsMap[payment.order_id].push(payment);
+            });
+            console.log('[OrderService] [findAll] Paiements récupérés et groupés', { 
+                paymentCount: allPayments.length 
+            });
+        }
 
         // Transformer les résultats pour inclure les objets imbriqués
         const orders = rows.map(order => {
@@ -265,7 +326,7 @@ const findAll = async (filters = {}) => {
 
             // Ajouter l'utilisateur assigné
             if (order.assigned_to) {
-                result.assigned = {
+                result.assigned_staff = {
                     id: order.assigned_to,
                     phone_number: order.assigned_phone,
                     role: order.assigned_role,
@@ -273,6 +334,9 @@ const findAll = async (filters = {}) => {
                     updated_at: order.assigned_updated
                 };
             }
+
+            // 🆕 AJOUTER LES PAIEMENTS
+            result.payments = paymentsMap[order.id] || [];
 
             // Supprimer les champs inutiles
             [
@@ -309,13 +373,12 @@ const updateOrder = async (orderId, orderData) => {
     console.log('[OrderService] [updateOrder] Début de mise à jour', { orderId, orderData });
 
     try {
-        // Construire dynamiquement la requête UPDATE
         const fields = [];
         const params = [];
-        let paramIndex = 1; // CORRECTION : Ajouter un compteur pour PostgreSQL
+        let paramIndex = 1;
 
         if (orderData.user_id !== undefined) {
-            fields.push(`user_id = $${paramIndex++}`); // CORRECTION : ? -> $1, $2, etc.
+            fields.push(`user_id = $${paramIndex++}`);
             params.push(orderData.user_id);
             console.log('[OrderService] [updateOrder] Ajout user_id à la mise à jour');
         }
@@ -360,7 +423,7 @@ const updateOrder = async (orderId, orderData) => {
             throw new Error('Aucun champ à mettre à jour');
         }
 
-        fields.push(`updated_at = NOW()`); // CORRECTION : Pas de paramètre pour NOW()
+        fields.push(`updated_at = NOW()`);
         params.push(orderId);
 
         const query = `UPDATE orders SET ${fields.join(', ')} WHERE id = $${paramIndex}`;
@@ -371,10 +434,9 @@ const updateOrder = async (orderId, orderData) => {
 
         console.log('[OrderService] [updateOrder] Résultat de la mise à jour', {
             orderId,
-            rowCount: result.rowCount // CORRECTION : Utiliser rowCount
+            rowCount: result.rowCount
         });
 
-        // CORRECTION : Vérifier rowCount au lieu de affectedRows
         if (result.rowCount === 0) {
             const error = new Error(`Commande non trouvée: ${orderId}`);
             console.log('[OrderService] [updateOrder] Commande non trouvée', { orderId });
@@ -431,9 +493,9 @@ const deleteOrder = async (orderId) => {
         });
 
         console.log('[OrderService] [deleteOrder] Exécution requête DELETE');
-        const [result] = await db.execute('DELETE FROM orders WHERE id = ?', [orderId]);
+        const [result] = await db.execute('DELETE FROM orders WHERE id = $1', [orderId]);
 
-        if (result.affectedRows === 0) {
+        if (result.rowCount === 0) {
             const error = new Error(`Aucune commande supprimée (ID: ${orderId})`);
             console.log('[OrderService] [deleteOrder] Aucune ligne supprimée', { orderId });
             logger.warn(`[OrderService] ${error.message}`);
@@ -442,11 +504,11 @@ const deleteOrder = async (orderId) => {
 
         console.log('[OrderService] [deleteOrder] Suppression réussie', {
             orderId,
-            affectedRows: result.affectedRows
+            rowCount: result.rowCount
         });
-        logger.info('[OrderService] Commande supprimée avec succès', {
+        logger.info('[OrderService] Commande supprimée avec succès (et ses paiements en cascade)', {
             orderId,
-            affectedRows: result.affectedRows
+            rowCount: result.rowCount
         });
 
         console.log('[OrderService] [deleteOrder] Retour du résultat');
@@ -464,15 +526,6 @@ const deleteOrder = async (orderId) => {
             stack: error.stack
         });
 
-        // Gestion des erreurs spécifiques
-        if (error.code === 'ER_ROW_IS_REFERENCED_2') {
-            const message = `Impossible de supprimer la commande ${orderId} car elle est liée à des paiements`;
-            console.log('[OrderService] [deleteOrder] Erreur de contrainte de clé étrangère', { orderId });
-            logger.warn(`[OrderService] ${message}`);
-            throw new Error(message);
-        }
-
-        // Gestion des erreurs générales
         throw new Error(`Échec de la suppression de la commande: ${error.message}`);
     }
 };

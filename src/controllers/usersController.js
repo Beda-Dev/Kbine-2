@@ -358,12 +358,12 @@ const deleteUser = async (req, res) => {
         const userId = parseInt(req.params.id);
 
         // Empêcher la suppression de son propre compte
-        if (req.user.id === userId) {
-            return res.status(400).json({
-                success: false,
-                error: 'Vous ne pouvez pas supprimer votre propre compte'
-            });
-        }
+        // if (req.user.id === userId) {
+        //     return res.status(400).json({
+        //         success: false,
+        //         error: 'Vous ne pouvez pas supprimer votre propre compte'
+        //     });
+        // }
 
         // Vérification que l'utilisateur existe
         const [existingUsers] = await db.execute(

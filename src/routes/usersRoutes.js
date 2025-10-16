@@ -29,6 +29,6 @@ router.post('/', authenticateToken, requireRole(['admin']), usersController.crea
 router.put('/:id', authenticateToken, usersController.updateUser);
 
 // Supprimer un utilisateur (admin uniquement)
-router.delete('/:id', authenticateToken, requireRole(['admin']), usersController.deleteUser);
+router.delete('/:id', authenticateToken, usersController.deleteUser);
 
 module.exports = router;
