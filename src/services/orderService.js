@@ -14,14 +14,14 @@ const createOrder = async (orderData) => {
         console.log('[OrderService] [createOrder] Statut défini', { status });
 
         console.log('[OrderService] [createOrder] Exécution requête INSERT');
-        
+
         const query = `
             INSERT INTO orders 
             (user_id, plan_id, amount, status, assigned_to, created_at, updated_at)
             VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
             RETURNING id
         `;
-        
+
         const params = [
             orderData.user_id,
             orderData.plan_id,
@@ -42,7 +42,7 @@ const createOrder = async (orderData) => {
 
         const insertId = result[0] && result[0][0] ? result[0][0].id : null;
         console.log('[OrderService] [createOrder] ID généré récupéré', { insertId });
-        
+
         if (!insertId) {
             throw new Error('Échec de la récupération de l\'ID de la commande créée');
         }
@@ -53,11 +53,11 @@ const createOrder = async (orderData) => {
 
         console.log('[OrderService] [createOrder] Récupération des détails de la commande créée');
         const createdOrder = await findById(insertId);
-        
+
         if (!createdOrder) {
             throw new Error('La commande a été créée mais n\'a pas pu être récupérée');
         }
-        
+
         logger.info('[OrderService] Détails de la commande créée', { order: createdOrder });
 
         console.log('[OrderService] [createOrder] Retour de la commande créée');
@@ -245,6 +245,13 @@ const findAll = async (filters = {}) => {
             params.push(filters.status);
         }
 
+        // AJOUT: Filtre par date de création
+        if (filters.date) {
+            conditions.push(`DATE(o.created_at) = $${paramIndex++}`);
+            params.push(filters.date);
+            console.log('[OrderService] [findAll] Filtre date appliqué', { date: filters.date });
+        }
+
         if (conditions.length > 0) {
             query += ' WHERE ' + conditions.join(' AND ');
         }
@@ -286,8 +293,8 @@ const findAll = async (filters = {}) => {
                 }
                 paymentsMap[payment.order_id].push(payment);
             });
-            console.log('[OrderService] [findAll] Paiements récupérés et groupés', { 
-                paymentCount: allPayments.length 
+            console.log('[OrderService] [findAll] Paiements récupérés et groupés', {
+                paymentCount: allPayments.length
             });
         }
 

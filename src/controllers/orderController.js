@@ -67,7 +67,7 @@ const getAllOrders = async (req, res, next) => {
     });
 
     try {
-        const { page = 1, limit = 10, status, user_id } = req.query;
+        const { page = 1, limit = 10, status, user_id, date } = req.query;
         const filters = {};
 
         console.log('[OrderController] [getAllOrders] Paramètres reçus', {
@@ -75,6 +75,7 @@ const getAllOrders = async (req, res, next) => {
             limit,
             status,
             userId: user_id,
+            date,
             requestingUser: req.user.id
         });
 
@@ -83,6 +84,7 @@ const getAllOrders = async (req, res, next) => {
             limit,
             status,
             userId: user_id,
+            date,
             requestingUser: req.user.id
         });
 
@@ -98,6 +100,12 @@ const getAllOrders = async (req, res, next) => {
         if (status) {
             filters.status = status;
             console.log('[OrderController] [getAllOrders] Filtre statut appliqué', { status });
+        }
+
+        // AJOUT: Filtre par date de création
+        if (date) {
+            filters.date = date;
+            console.log('[OrderController] [getAllOrders] Filtre date appliqué', { date });
         }
 
         console.log('[OrderController] [getAllOrders] Appel du service findAll', { filters });

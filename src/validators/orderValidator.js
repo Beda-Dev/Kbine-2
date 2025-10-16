@@ -1,5 +1,5 @@
 // ==========================================
-// FILE: orderValidator.js (CORRIGÉ)
+// FILE: orderValidator.js (MODIFIÉ)
 // ==========================================
 const Joi = require('joi');
 
@@ -8,7 +8,6 @@ const ORDER_STATUS = ['pending', 'assigned', 'processing', 'completed', 'cancell
 const PAYMENT_METHODS = ['wave', 'orange_money', 'mtn_money', 'moov_money'];
 
 // Schéma de base pour une commande
-
 const orderSchema = Joi.object({
     plan_id: Joi.number()
         .integer()
@@ -168,6 +167,12 @@ const listOrdersValidation = (query) => {
                 'number.base': "L'ID utilisateur doit être un nombre",
                 'number.integer': "L'ID utilisateur doit être un entier",
                 'number.positive': "L'ID utilisateur doit être un nombre positif"
+            }),
+        // AJOUT: Filtre par date de création
+        date: Joi.string()
+            .pattern(/^\d{4}-\d{2}-\d{2}$/) // Format YYYY-MM-DD
+            .messages({
+                'string.pattern.base': 'La date doit être au format YYYY-MM-DD (ex: 2024-01-15)'
             })
     });
 
